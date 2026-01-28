@@ -1,0 +1,14 @@
+[Unit]
+Description=Unpalm - Palm Rejection Filter
+After=bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/unpalm
+Restart=on-failure
+RestartSec=5
+ExecStartPre=/bin/sleep 2
+
+[Install]
+WantedBy=multi-user.target

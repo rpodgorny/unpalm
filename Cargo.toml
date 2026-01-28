@@ -1,0 +1,15 @@
+[package]
+name = "unpalm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+evdev = "0.13"
+signal-hook = "0.4"
+nix = { version = "0.29", features = ["poll"] }
+clap = { version = "4.5", features = ["derive"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
