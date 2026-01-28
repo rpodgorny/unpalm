@@ -71,8 +71,7 @@ fn parse_polygon_string(s: &str) -> Result<Vec<(f32, f32)>, String> {
             let coords: Vec<&str> = point_str.split(',').collect();
             if coords.len() != 2 {
                 return Err(format!(
-                    "Invalid point format '{}', expected 'x,y'",
-                    point_str
+                    "Invalid point format '{point_str}', expected 'x,y'"
                 ));
             }
 
@@ -85,8 +84,7 @@ fn parse_polygon_string(s: &str) -> Result<Vec<(f32, f32)>, String> {
 
             if !(0.0..=100.0).contains(&x) || !(0.0..=100.0).contains(&y) {
                 return Err(format!(
-                    "Coordinates must be in range 0-100, got ({}, {})",
-                    x, y
+                    "Coordinates must be in range 0-100, got ({x}, {y})"
                 ));
             }
 
@@ -246,19 +244,16 @@ fn find_device(device_name: Option<&str>, device_file: Option<&PathBuf>) -> Resu
             1 => {
                 let (path, device) = matches.into_iter().next().unwrap();
                 let dev_name = device.name().unwrap_or("Unknown");
-                println!("Found device: {} - {}", path.display(), dev_name);
+                println!("Found device: {} - {dev_name}", path.display());
                 return Ok(device);
             }
             n => {
-                eprintln!(
-                    "Found {} devices matching pattern '{}', please be more specific:",
-                    n, name
-                );
+                eprintln!("Found {n} devices matching pattern '{name}', please be more specific:");
                 for (path, device) in &matches {
                     let dev_name = device.name().unwrap_or("Unknown");
-                    eprintln!("  {} - {}", path.display(), dev_name);
+                    eprintln!("  {} - {dev_name}", path.display());
                 }
-                return Err(format!("Multiple devices found matching pattern: {}", name));
+                return Err(format!("Multiple devices found matching pattern: {name}"));
             }
         }
     }
@@ -271,14 +266,14 @@ fn find_device(device_name: Option<&str>, device_file: Option<&PathBuf>) -> Resu
         1 => {
             let (path, device) = touchpads.into_iter().next().unwrap();
             let name = device.name().unwrap_or("Unknown");
-            println!("Auto-detected touchpad: {} - {}", path.display(), name);
+            println!("Auto-detected touchpad: {} - {name}", path.display());
             Ok(device)
         }
         n => {
-            eprintln!("Found {} touchpads, please specify one with -n or -f:", n);
+            eprintln!("Found {n} touchpads, please specify one with -n or -f:");
             for (path, device) in &touchpads {
                 let name = device.name().unwrap_or("Unknown");
-                eprintln!("  {} - {}", path.display(), name);
+                eprintln!("  {} - {name}", path.display());
             }
             Err("Multiple touchpads found".to_string())
         }
@@ -312,10 +307,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let x_max = x_info.maximum();
     let y_max = y_info.maximum();
 
-    println!(
-        "Detected touchpad dimensions: X_MAX={}, Y_MAX={}",
-        x_max, y_max
-    );
+    println!("Detected touchpad dimensions: X_MAX={x_max}, Y_MAX={y_max}");
 
     // Build exclusion zone polygons from margins and explicit polygons
     let mut polygons: Vec<Polygon> = Vec::new();
