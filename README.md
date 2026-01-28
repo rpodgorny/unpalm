@@ -77,7 +77,9 @@ The tool will auto-detect your touchpad and create a filtered virtual device.
 | `--margin-right <PERCENT>` | Right margin as percentage of touchpad width | 20 |
 | `--margin-top <PERCENT>` | Top margin as percentage of touchpad height | 20 |
 | `--margin-bottom <PERCENT>` | Bottom margin as percentage of touchpad height | 0 |
-| `--polygon <POINTS>` | Polygon exclusion zone (format: `"x1,y1 x2,y2 x3,y3"`) | None |
+| `--polygon <POINTS>` | Polygon exclusion zone (format: `"x1,y1 x2,y2 x3,y3"` where x,y are percentages 0-100) | None |
+
+**Note:** All polygon coordinates are specified as percentages (0-100) of the touchpad's width/height, making configurations portable across different touchpad sizes.
 
 ## Usage Examples
 
@@ -98,12 +100,14 @@ sudo ./target/release/unpalm --margin-left 30 --margin-right 30 --margin-top 15 
 
 **No margins, only a custom triangular exclusion zone:**
 ```bash
+# Triangle at top-left corner (coordinates are percentages: 0-100)
 sudo ./target/release/unpalm --margin-left 0 --margin-right 0 --margin-top 0 \
   --polygon "0,0 20,0 10,30"
 ```
 
 **Multiple polygon zones:**
 ```bash
+# Two triangles at top corners (all coordinates are percentages 0-100)
 sudo ./target/release/unpalm \
   --polygon "0,0 15,0 0,25" \
   --polygon "85,0 100,0 100,25"

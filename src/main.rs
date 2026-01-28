@@ -124,7 +124,8 @@ struct Cli {
     #[arg(long, default_value_t = 0)]
     margin_bottom: i32,
 
-    /// Polygon exclusion zones (format: "x1,y1 x2,y2 x3,y3 ..." where coordinates are percentages 0-100)
+    /// Polygon exclusion zones (format: "x1,y1 x2,y2 x3,y3 ..." where ALL coordinates are PERCENTAGES 0-100)
+    /// Example: "0,0 20,0 10,30" creates a triangle at the top-left corner
     /// Can be specified multiple times for multiple polygons
     #[arg(long, value_name = "POINTS")]
     polygon: Vec<String>,
