@@ -11,7 +11,7 @@ use std::thread;
 
 #[derive(Debug, Clone)]
 struct Polygon {
-    vertices: Vec<(i32, i32)>,  // Absolute coordinates
+    vertices: Vec<(i32, i32)>, // Absolute coordinates
 }
 
 impl Polygon {
@@ -51,8 +51,8 @@ impl Polygon {
             let (xj, yj) = self.vertices[j];
 
             if (yi > py) != (yj > py) {
-                let x_intersect = xj as i64 +
-                    ((py as i64 - yj as i64) * (xi as i64 - xj as i64)) / (yi as i64 - yj as i64);
+                let x_intersect = xj as i64
+                    + ((py as i64 - yj as i64) * (xi as i64 - xj as i64)) / (yi as i64 - yj as i64);
                 if (px as i64) < x_intersect {
                     inside = !inside;
                 }
@@ -70,16 +70,24 @@ fn parse_polygon_string(s: &str) -> Result<Vec<(f32, f32)>, String> {
         .map(|point_str| {
             let coords: Vec<&str> = point_str.split(',').collect();
             if coords.len() != 2 {
-                return Err(format!("Invalid point format '{}', expected 'x,y'", point_str));
+                return Err(format!(
+                    "Invalid point format '{}', expected 'x,y'",
+                    point_str
+                ));
             }
 
-            let x = coords[0].parse::<f32>()
+            let x = coords[0]
+                .parse::<f32>()
                 .map_err(|_| format!("Invalid x coordinate '{}'", coords[0]))?;
-            let y = coords[1].parse::<f32>()
+            let y = coords[1]
+                .parse::<f32>()
                 .map_err(|_| format!("Invalid y coordinate '{}'", coords[1]))?;
 
             if !(0.0..=100.0).contains(&x) || !(0.0..=100.0).contains(&y) {
-                return Err(format!("Coordinates must be in range 0-100, got ({}, {})", x, y));
+                return Err(format!(
+                    "Coordinates must be in range 0-100, got ({}, {})",
+                    x, y
+                ));
             }
 
             Ok((x, y))
@@ -89,7 +97,10 @@ fn parse_polygon_string(s: &str) -> Result<Vec<(f32, f32)>, String> {
     let points = points?;
 
     if points.len() < 3 {
-        return Err(format!("Polygon must have at least 3 points, got {}", points.len()));
+        return Err(format!(
+            "Polygon must have at least 3 points, got {}",
+            points.len()
+        ));
     }
 
     Ok(points)
@@ -150,9 +161,9 @@ fn is_touchpad(device: &Device) -> bool {
     let supported = device.supported_absolute_axes();
     if let Some(axes) = supported {
         let has_mt = axes.contains(AbsoluteAxisCode::ABS_MT_POSITION_X)
-                  && axes.contains(AbsoluteAxisCode::ABS_MT_POSITION_Y);
-        let has_st = axes.contains(AbsoluteAxisCode::ABS_X)
-                  && axes.contains(AbsoluteAxisCode::ABS_Y);
+            && axes.contains(AbsoluteAxisCode::ABS_MT_POSITION_Y);
+        let has_st =
+            axes.contains(AbsoluteAxisCode::ABS_X) && axes.contains(AbsoluteAxisCode::ABS_Y);
         return has_mt || has_st;
     }
 
@@ -209,7 +220,11 @@ fn find_device(device_name: Option<&str>, device_file: Option<&PathBuf>) -> Resu
                 return Ok(device);
             }
             Err(e) => {
-                return Err(format!("Failed to open device file {}: {}", path.display(), e));
+                return Err(format!(
+                    "Failed to open device file {}: {}",
+                    path.display(),
+                    e
+                ));
             }
         }
     }
@@ -218,7 +233,8 @@ fn find_device(device_name: Option<&str>, device_file: Option<&PathBuf>) -> Resu
     if let Some(name) = device_name {
         let matches: Vec<(PathBuf, Device)> = enumerate()
             .filter(|(_, device)| {
-                device.name()
+                device
+                    .name()
                     .map(|dev_name| wildcard_match(name, dev_name))
                     .unwrap_or(false)
             })
@@ -234,7 +250,10 @@ fn find_device(device_name: Option<&str>, device_file: Option<&PathBuf>) -> Resu
                 return Ok(device);
             }
             n => {
-                eprintln!("Found {} devices matching pattern '{}', please be more specific:", n, name);
+                eprintln!(
+                    "Found {} devices matching pattern '{}', please be more specific:",
+                    n, name
+                );
                 for (path, device) in &matches {
                     let dev_name = device.name().unwrap_or("Unknown");
                     eprintln!("  {} - {}", path.display(), dev_name);
@@ -276,8 +295,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Find the touchpad
-    let mut device =
-        find_device(cli.device_name.as_deref(), cli.device_file.as_ref())?;
+    let mut device = find_device(cli.device_name.as_deref(), cli.device_file.as_ref())?;
 
     // Detect touchpad dimensions from device
     let absinfo: HashMap<AbsoluteAxisCode, evdev::AbsInfo> = device.get_absinfo()?.collect();
@@ -686,9 +704,9 @@ mod tests {
         assert!(rect.contains(50, 50));
         assert!(rect.contains(15, 15));
         assert!(rect.contains(85, 85));
-        assert!(!rect.contains(5, 50));  // Left of rect
+        assert!(!rect.contains(5, 50)); // Left of rect
         assert!(!rect.contains(95, 50)); // Right of rect
-        assert!(!rect.contains(50, 5));  // Above rect
+        assert!(!rect.contains(50, 5)); // Above rect
         assert!(!rect.contains(50, 95)); // Below rect
     }
 
@@ -702,19 +720,19 @@ mod tests {
         let margin = 10;
 
         let mut polygons = vec![];
-        polygons.push(Polygon::rectangle(0, 0, margin, y_max));           // Left
+        polygons.push(Polygon::rectangle(0, 0, margin, y_max)); // Left
         polygons.push(Polygon::rectangle(x_max - margin, 0, x_max, y_max)); // Right
-        polygons.push(Polygon::rectangle(0, 0, x_max, margin));           // Top
+        polygons.push(Polygon::rectangle(0, 0, x_max, margin)); // Top
         polygons.push(Polygon::rectangle(0, y_max - margin, x_max, y_max)); // Bottom
 
         // Center should not be blocked
         assert!(!is_in_any_polygon(50, 50, &polygons));
 
         // Margins should be blocked
-        assert!(is_in_any_polygon(5, 50, &polygons));   // Left margin
-        assert!(is_in_any_polygon(95, 50, &polygons));  // Right margin
-        assert!(is_in_any_polygon(50, 5, &polygons));   // Top margin
-        assert!(is_in_any_polygon(50, 95, &polygons));  // Bottom margin
+        assert!(is_in_any_polygon(5, 50, &polygons)); // Left margin
+        assert!(is_in_any_polygon(95, 50, &polygons)); // Right margin
+        assert!(is_in_any_polygon(50, 5, &polygons)); // Top margin
+        assert!(is_in_any_polygon(50, 95, &polygons)); // Bottom margin
     }
 
     #[test]
