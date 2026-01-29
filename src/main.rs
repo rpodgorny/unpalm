@@ -437,7 +437,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_SLOT, value) => {
                     current_slot = value;
                 }
-                evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_TRACKING_ID, value) => {
+                evdev::EventSummary::AbsoluteAxis(
+                    _,
+                    AbsoluteAxisCode::ABS_MT_TRACKING_ID,
+                    value,
+                ) => {
                     if value >= 0 {
                         // New touch started
                         slot_positions.insert(current_slot, (None, None));
