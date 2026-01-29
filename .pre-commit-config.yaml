@@ -5,6 +5,12 @@ repos:
       - id: fmt
       - id: cargo-check
 
+  # broken?
+  #- repo: https://github.com/est31/cargo-udeps
+  #  rev: v0.1.47
+  #  hooks:
+  #  - id: udeps
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -30,3 +36,8 @@ repos:
       - id: fix-byte-order-marker
       - id: name-tests-test
       - id: trailing-whitespace
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
