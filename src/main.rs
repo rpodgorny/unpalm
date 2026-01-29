@@ -62,6 +62,123 @@ impl Polygon {
         }
         inside
     }
+
+    /// Validate polygon and return warnings for suspicious configurations
+    fn validate(&self) -> Vec<String> {
+        let mut warnings = Vec::new();
+
+        // 1. Check for duplicate consecutive points
+        for i in 0..self.vertices.len() {
+            let j = (i + 1) % self.vertices.len();
+            if self.vertices[i] == self.vertices[j] {
+                warnings.push(format!(
+                    "Duplicate consecutive vertex at {:?}",
+                    self.vertices[i]
+                ));
+            }
+        }
+
+        // 2. Check for zero/near-zero area using shoelace formula
+        let area = self.signed_area().abs();
+        if area < 1.0 {
+            // Less than 1 square unit
+            warnings.push("Polygon has near-zero area (may be degenerate)".to_string());
+        }
+
+        // 3. Check for self-intersection
+        if self.is_self_intersecting() {
+            warnings.push("Polygon has self-intersecting edges".to_string());
+        }
+
+        warnings
+    }
+
+    /// Calculate the signed area of the polygon using shoelace formula
+    fn signed_area(&self) -> f64 {
+        let mut sum = 0i64;
+        for i in 0..self.vertices.len() {
+            let j = (i + 1) % self.vertices.len();
+            let (x1, y1) = self.vertices[i];
+            let (x2, y2) = self.vertices[j];
+            sum += (x1 as i64) * (y2 as i64) - (x2 as i64) * (y1 as i64);
+        }
+        (sum as f64).abs() / 2.0
+    }
+
+    /// Check if polygon has self-intersecting edges
+    fn is_self_intersecting(&self) -> bool {
+        let n = self.vertices.len();
+
+        // Check all non-adjacent edge pairs for intersection
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let (p1, p2) = (self.vertices[i], self.vertices[j]);
+
+            // Start checking from i+2 to avoid checking adjacent edges
+            let start = (i + 2) % n;
+            for k in 0..n {
+                let edge_idx = (start + k) % n;
+                // Stop before wrapping back to the edge adjacent to current
+                if edge_idx == i || edge_idx == j {
+                    continue;
+                }
+
+                let next_idx = (edge_idx + 1) % n;
+                if next_idx == i || next_idx == j {
+                    continue;
+                }
+
+                let (p3, p4) = (self.vertices[edge_idx], self.vertices[next_idx]);
+
+                if Self::segments_intersect(p1, p2, p3, p4) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if two line segments intersect
+    fn segments_intersect(p1: (i32, i32), p2: (i32, i32), p3: (i32, i32), p4: (i32, i32)) -> bool {
+        fn ccw(a: (i32, i32), b: (i32, i32), c: (i32, i32)) -> i32 {
+            let (ax, ay) = a;
+            let (bx, by) = b;
+            let (cx, cy) = c;
+            ((cy as i64 - ay as i64) * (bx as i64 - ax as i64)
+                - (by as i64 - ay as i64) * (cx as i64 - ax as i64))
+                .signum() as i32
+        }
+
+        let d1 = ccw(p3, p4, p1);
+        let d2 = ccw(p3, p4, p2);
+        let d3 = ccw(p1, p2, p3);
+        let d4 = ccw(p1, p2, p4);
+
+        if d1 != d2 && d3 != d4 {
+            return true;
+        }
+
+        // Check collinear cases (endpoints touching)
+        if d1 == 0 && Self::on_segment(p3, p1, p4) {
+            return true;
+        }
+        if d2 == 0 && Self::on_segment(p3, p2, p4) {
+            return true;
+        }
+        if d3 == 0 && Self::on_segment(p1, p3, p2) {
+            return true;
+        }
+        if d4 == 0 && Self::on_segment(p1, p4, p2) {
+            return true;
+        }
+
+        false
+    }
+
+    /// Check if point q lies on segment pr (assuming q is collinear with p and r)
+    fn on_segment(p: (i32, i32), q: (i32, i32), r: (i32, i32)) -> bool {
+        q.0 <= p.0.max(r.0) && q.0 >= p.0.min(r.0) && q.1 <= p.1.max(r.1) && q.1 >= p.1.min(r.1)
+    }
 }
 
 /// Parse a polygon string like "0,0 10,0 0,30" into percentage coordinates (0-100)
@@ -345,6 +462,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let polygon = Polygon::from_percentages(&points, x_max, y_max)
             .map_err(|e| format!("Failed to create polygon {}: {}", i + 1, e))?;
         println!("Polygon {}: {} vertices", i + 1, polygon.vertices.len());
+
+        // Validate polygon and print warnings
+        for warning in polygon.validate() {
+            eprintln!("Warning: Polygon {}: {}", i + 1, warning);
+        }
+
         polygons.push(polygon);
     }
 
@@ -750,5 +873,120 @@ mod tests {
 
         // Outside both doesn't block
         assert!(!is_in_any_polygon(80, 50, &polygons));
+    }
+
+    // Tests for polygon validation
+
+    #[test]
+    fn test_validate_valid_polygon() {
+        let polygon = Polygon {
+            vertices: vec![(0, 0), (100, 0), (50, 100)],
+        };
+        let warnings = polygon.validate();
+        assert!(warnings.is_empty(), "Valid polygon should have no warnings");
+    }
+
+    #[test]
+    fn test_validate_duplicate_consecutive_points() {
+        let polygon = Polygon {
+            vertices: vec![(0, 0), (0, 0), (100, 0), (50, 100)],
+        };
+        let warnings = polygon.validate();
+        assert!(!warnings.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|w| w.contains("Duplicate consecutive vertex")));
+    }
+
+    #[test]
+    fn test_validate_zero_area_collinear() {
+        // All points on a line - zero area
+        let polygon = Polygon {
+            vertices: vec![(0, 0), (50, 0), (100, 0)],
+        };
+        let warnings = polygon.validate();
+        assert!(!warnings.is_empty());
+        assert!(warnings.iter().any(|w| w.contains("near-zero area")));
+    }
+
+    #[test]
+    fn test_validate_self_intersecting() {
+        // Figure-eight / bowtie shape
+        let polygon = Polygon {
+            vertices: vec![(0, 0), (100, 100), (100, 0), (0, 100)],
+        };
+        let warnings = polygon.validate();
+        assert!(!warnings.is_empty());
+        assert!(warnings.iter().any(|w| w.contains("self-intersecting")));
+    }
+
+    #[test]
+    fn test_signed_area_triangle() {
+        let polygon = Polygon {
+            vertices: vec![(0, 0), (100, 0), (0, 100)],
+        };
+        let area = polygon.signed_area();
+        // Area of right triangle with base=100, height=100 is 5000
+        assert!((area - 5000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_signed_area_rectangle() {
+        let polygon = Polygon {
+            vertices: vec![(0, 0), (100, 0), (100, 50), (0, 50)],
+        };
+        let area = polygon.signed_area();
+        // Area of 100x50 rectangle is 5000
+        assert!((area - 5000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_segments_intersect_crossing() {
+        // Two segments that cross
+        let p1 = (0, 0);
+        let p2 = (100, 100);
+        let p3 = (0, 100);
+        let p4 = (100, 0);
+        assert!(Polygon::segments_intersect(p1, p2, p3, p4));
+    }
+
+    #[test]
+    fn test_segments_intersect_non_crossing() {
+        // Two segments that don't intersect
+        let p1 = (0, 0);
+        let p2 = (50, 0);
+        let p3 = (100, 0);
+        let p4 = (150, 0);
+        assert!(!Polygon::segments_intersect(p1, p2, p3, p4));
+    }
+
+    #[test]
+    fn test_is_self_intersecting_valid_square() {
+        let polygon = Polygon {
+            vertices: vec![(0, 0), (100, 0), (100, 100), (0, 100)],
+        };
+        assert!(!polygon.is_self_intersecting());
+    }
+
+    #[test]
+    fn test_is_self_intersecting_bowtie() {
+        // Bowtie/figure-eight polygon
+        let polygon = Polygon {
+            vertices: vec![(0, 0), (100, 100), (100, 0), (0, 100)],
+        };
+        assert!(polygon.is_self_intersecting());
+    }
+
+    #[test]
+    fn test_validate_multiple_warnings() {
+        // Polygon with both duplicate points and near-zero area
+        let polygon = Polygon {
+            vertices: vec![(0, 0), (0, 0), (1, 0)],
+        };
+        let warnings = polygon.validate();
+        // Should have warnings for both duplicate vertices and near-zero area
+        assert!(warnings.len() >= 2);
+        assert!(warnings.iter().any(|w| w.contains("Duplicate")));
+        assert!(warnings.iter().any(|w| w.contains("near-zero area")));
     }
 }
