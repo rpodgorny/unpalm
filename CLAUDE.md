@@ -121,7 +121,9 @@ Touch lifecycle per slot:
 
 All configuration is via CLI arguments (no config file):
 - Margins: `--margin-{left,right,top,bottom}` as percentages (0-100)
-- Custom polygons: `--polygon "x1,y1 x2,y2 x3,y3 ..."` (percentages, repeatable)
+- Custom polygons: `--polygon "x1,y1 x2,y2 x3,y3 ..."` where **ALL coordinates are percentages 0-100** (repeatable)
+  - Example: `--polygon "0,0 20,0 10,30"` creates a triangle at top-left corner
+  - Percentages make configurations portable across different touchpad sizes
 - Device selection: `-n` for name pattern with wildcards, `-f` for explicit path
 
 For systemd service, edit `/etc/systemd/system/unpalm.service` and modify the `ExecStart` line.

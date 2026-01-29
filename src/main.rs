@@ -1,5 +1,5 @@
 use clap::Parser;
-use evdev::{enumerate, uinput::VirtualDevice, AbsoluteAxisCode, Device, EventSummary, InputEvent};
+use evdev::{uinput::VirtualDevice, AbsoluteAxisCode};
 use nix::poll::{poll, PollFd, PollFlags};
 use signal_hook::{consts::SIGINT, consts::SIGTERM, iterator::Signals};
 use std::collections::HashMap;
@@ -15,7 +15,8 @@ struct Polygon {
 }
 
 impl Polygon {
-    /// Create a polygon from percentage coordinates
+    /// Create a polygon from percentage coordinates (0-100)
+    /// Converts percentage points to absolute touchpad coordinates
     fn from_percentages(points: &[(f32, f32)], x_max: i32, y_max: i32) -> Result<Self, String> {
         if points.len() < 3 {
             return Err("Polygon must have at least 3 points".to_string());
@@ -63,7 +64,8 @@ impl Polygon {
     }
 }
 
-/// Parse a polygon string like "0,0 10,0 0,30" into percentage coordinates
+/// Parse a polygon string like "0,0 10,0 0,30" into percentage coordinates (0-100)
+/// All coordinates are percentages of touchpad width/height, making configs portable
 fn parse_polygon_string(s: &str) -> Result<Vec<(f32, f32)>, String> {
     let points: Result<Vec<(f32, f32)>, String> = s
         .split_whitespace()
@@ -143,7 +145,7 @@ struct Cli {
 /// Check if a device is a touchpad by looking for:
 /// - INPUT_PROP_POINTER property (not a touchscreen which has INPUT_PROP_DIRECT)
 /// - Absolute position axes (ABS_MT_POSITION_X/Y or ABS_X/Y)
-fn is_touchpad(device: &Device) -> bool {
+fn is_touchpad(device: &evdev::Device) -> bool {
     use evdev::PropType;
 
     let props = device.properties();
@@ -199,29 +201,31 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
 }
 
 /// Find all touchpad devices in the system
-fn find_all_touchpads() -> Vec<(PathBuf, Device)> {
-    enumerate()
+fn find_all_touchpads() -> Vec<(PathBuf, evdev::Device)> {
+    evdev::enumerate()
         .filter(|(_, device)| is_touchpad(device))
         .map(|(path, device)| (path.to_path_buf(), device))
         .collect()
 }
 
-fn find_device(device_name: Option<&str>, device_file: Option<&PathBuf>) -> Result<Device, String> {
+fn find_device(
+    device_name: Option<&str>,
+    device_file: Option<&PathBuf>,
+) -> Result<evdev::Device, String> {
     // Case 1: Explicit device file path
     if let Some(path) = device_file {
-        match Device::open(path) {
+        match evdev::Device::open(path) {
             Ok(device) => {
                 println!("Opened device file: {}", path.display());
                 if let Some(name) = device.name() {
-                    println!("Device name: {}", name);
+                    println!("Device name: {name}");
                 }
                 return Ok(device);
             }
             Err(e) => {
                 return Err(format!(
-                    "Failed to open device file {}: {}",
-                    path.display(),
-                    e
+                    "Failed to open device file {}: {e}",
+                    path.display()
                 ));
             }
         }
@@ -229,7 +233,7 @@ fn find_device(device_name: Option<&str>, device_file: Option<&PathBuf>) -> Resu
 
     // Case 2: Search by name
     if let Some(name) = device_name {
-        let matches: Vec<(PathBuf, Device)> = enumerate()
+        let matches: Vec<(PathBuf, evdev::Device)> = evdev::enumerate()
             .filter(|(_, device)| {
                 device
                     .name()
@@ -413,7 +417,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Now fetch events (will return immediately since we polled first)
-        let events: Vec<InputEvent> = match device.fetch_events() {
+        let events: Vec<evdev::InputEvent> = match device.fetch_events() {
             Ok(events) => events.collect(),
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::WouldBlock {
@@ -430,10 +434,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut forward = true;
 
             match event.destructure() {
-                EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_SLOT, value) => {
+                evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_SLOT, value) => {
                     current_slot = value;
                 }
-                EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_TRACKING_ID, value) => {
+                evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_TRACKING_ID, value) => {
                     if value >= 0 {
                         // New touch started
                         slot_positions.insert(current_slot, (None, None));
@@ -444,7 +448,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         slot_positions.remove(&current_slot);
                     }
                 }
-                EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_POSITION_X, x) => {
+                evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_POSITION_X, x) => {
                     if let Some((old_x, old_y)) = slot_positions.get(&current_slot).copied() {
                         slot_positions.insert(current_slot, (Some(x), old_y));
 
@@ -453,16 +457,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if let Some(y) = old_y {
                                 if is_in_any_polygon(x, y, &polygons) {
                                     slot_blocked.insert(current_slot, true);
-                                    println!(
-                                        "Slot {}: blocked (started at {}, {})",
-                                        current_slot, x, y
-                                    );
+                                    println!("Slot {current_slot}: blocked (started at {x}, {y})");
                                 }
                             }
                         }
                     }
                 }
-                EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_POSITION_Y, y) => {
+                evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_POSITION_Y, y) => {
                     if let Some((old_x, old_y)) = slot_positions.get(&current_slot).copied() {
                         slot_positions.insert(current_slot, (old_x, Some(y)));
 
@@ -471,10 +472,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if let Some(x) = old_x {
                                 if is_in_any_polygon(x, y, &polygons) {
                                     slot_blocked.insert(current_slot, true);
-                                    println!(
-                                        "Slot {}: blocked (started at {}, {})",
-                                        current_slot, x, y
-                                    );
+                                    println!("Slot {current_slot}: blocked (started at {x}, {y})");
                                 }
                             }
                         }
@@ -486,7 +484,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Block only slot-specific MT events for blocked slots
             // DO NOT block ABS_X/ABS_Y as they represent the overall pointer position
             if slot_blocked.get(&current_slot).copied().unwrap_or(false) {
-                if let EventSummary::AbsoluteAxis(_, code, _) = event.destructure() {
+                if let evdev::EventSummary::AbsoluteAxis(_, code, _) = event.destructure() {
                     match code {
                         AbsoluteAxisCode::ABS_MT_POSITION_X
                         | AbsoluteAxisCode::ABS_MT_POSITION_Y
