@@ -6,6 +6,14 @@ A Linux palm rejection filter for touchpads, written in Rust.
 
 Many Linux touchpad drivers don't provide adequate palm rejection, causing accidental touches when typing or resting your palms on the touchpad edges. This tool addresses that by filtering out touches that begin in configurable exclusion zones.
 
+### The Hardware Workaround This Replaces
+
+![Touchpad with tape and aluminum foil blocking the edges](touchpad_with_tape.jpg)
+
+*Photo credit: [Lattice Point](http://www.latticepoint.org/blog/2014-9-8how-to-block-the-use-of-part-of-a-touchpad)*
+
+Some users resort to applying duct tape and aluminum foil to physically block portions of their touchpad (conductive material is required since regular tape won't prevent capacitive touch sensors from detecting input). **unpalm provides the same functionality in software** - defining exclusion zones without the need for physical modifications.
+
 ## Why unpalm?
 
 Existing solutions have significant limitations:
