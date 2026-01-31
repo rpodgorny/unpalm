@@ -11,9 +11,26 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
+
+/// Reason for exiting the event loop
+enum LoopExitReason {
+    /// Clean shutdown requested via signal (SIGINT/SIGTERM)
+    SignalReceived,
+    /// Device disconnected, reconnection may be attempted
+    DeviceDisconnected,
+    /// Fatal error that cannot be recovered from
+    FatalError(String),
+}
+
+/// Holds the device and virtual device after setup
+struct DeviceSetup {
+    device: evdev::Device,
+    virtual_device: VirtualDevice,
+}
 
 /// Palm rejection filter for touchpads
-#[derive(Parser, Debug)]
+#[derive(clap::Parser, Debug)]
 #[command(name = "unpalm")]
 #[command(about = "Filter palm touches from touchpad input", long_about = None)]
 struct Cli {
@@ -190,12 +207,21 @@ fn find_device(
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse command-line arguments
-    let cli = Cli::parse();
+/// Check if an I/O error indicates the device was disconnected
+fn is_device_disconnected(error: &std::io::Error) -> bool {
+    // ENODEV (19): No such device
+    // EIO (5): I/O error
+    // ENXIO (6): No such device or address
+    matches!(error.raw_os_error(), Some(19) | Some(5) | Some(6))
+}
 
+/// Set up the device and create the virtual device
+fn setup_device(
+    device_name: Option<&str>,
+    device_file: Option<&PathBuf>,
+) -> Result<(DeviceSetup, i32, i32), Box<dyn std::error::Error>> {
     // Find the touchpad
-    let mut device = find_device(cli.device_name.as_deref(), cli.device_file.as_ref())?;
+    let mut device = find_device(device_name, device_file)?;
 
     // Detect touchpad dimensions from device
     let absinfo: HashMap<AbsoluteAxisCode, evdev::AbsInfo> = device.get_absinfo()?.collect();
@@ -213,49 +239,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let y_max = y_info.maximum();
 
     println!("Detected touchpad dimensions: X_MAX={x_max}, Y_MAX={y_max}");
-
-    // Build exclusion zone polygons from margins and explicit polygons
-    let mut polygons: Vec<Polygon> = Vec::new();
-
-    // Convert margins to exclusion polygons
-    if cli.margin_left > 0 {
-        let margin_px = (x_max * cli.margin_left) / 100;
-        polygons.push(Polygon::rectangle(0, 0, margin_px, y_max));
-        println!("Left margin: {}% ({}px)", cli.margin_left, margin_px);
-    }
-    if cli.margin_right > 0 {
-        let margin_px = (x_max * cli.margin_right) / 100;
-        polygons.push(Polygon::rectangle(x_max - margin_px, 0, x_max, y_max));
-        println!("Right margin: {}% ({}px)", cli.margin_right, margin_px);
-    }
-    if cli.margin_top > 0 {
-        let margin_px = (y_max * cli.margin_top) / 100;
-        polygons.push(Polygon::rectangle(0, 0, x_max, margin_px));
-        println!("Top margin: {}% ({}px)", cli.margin_top, margin_px);
-    }
-    if cli.margin_bottom > 0 {
-        let margin_px = (y_max * cli.margin_bottom) / 100;
-        polygons.push(Polygon::rectangle(0, y_max - margin_px, x_max, y_max));
-        println!("Bottom margin: {}% ({}px)", cli.margin_bottom, margin_px);
-    }
-
-    // Parse explicit polygon exclusion zones
-    for (i, polygon_str) in cli.polygon.iter().enumerate() {
-        let points = parse_polygon_string(polygon_str)
-            .map_err(|e| format!("Failed to parse polygon {} '{}': {}", i + 1, polygon_str, e))?;
-        let polygon = Polygon::from_percentages(&points, x_max, y_max)
-            .map_err(|e| format!("Failed to create polygon {}: {}", i + 1, e))?;
-        println!("Polygon {}: {} vertices", i + 1, polygon.vertices.len());
-
-        // Validate polygon and print warnings
-        for warning in polygon.validate() {
-            eprintln!("Warning: Polygon {}: {}", i + 1, warning);
-        }
-
-        polygons.push(polygon);
-    }
-
-    println!("Total exclusion zones: {} polygon(s)", polygons.len());
 
     // Create virtual device with same capabilities
     let mut builder = VirtualDevice::builder()?
@@ -290,17 +273,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set device to non-blocking mode to allow polling
     device.set_nonblocking(true)?;
 
-    // Set up signal handling for clean shutdown
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
+    Ok((
+        DeviceSetup {
+            device,
+            virtual_device,
+        },
+        x_max,
+        y_max,
+    ))
+}
 
-    let mut signals = Signals::new([SIGINT, SIGTERM])?;
-    thread::spawn(move || {
-        for _ in signals.forever() {
-            r.store(false, Ordering::SeqCst);
+/// Attempt to reconnect to the device, retrying every second
+fn reconnect_with_retry(
+    device_name: Option<&str>,
+    device_file: Option<&PathBuf>,
+    running: &Arc<AtomicBool>,
+) -> Result<DeviceSetup, Box<dyn std::error::Error>> {
+    loop {
+        // Check if we should stop trying
+        if !running.load(Ordering::SeqCst) {
+            return Err("Shutdown requested during reconnection".into());
         }
-    });
 
+        // Wait before retrying
+        thread::sleep(Duration::from_secs(1));
+
+        // Check again after sleeping
+        if !running.load(Ordering::SeqCst) {
+            return Err("Shutdown requested during reconnection".into());
+        }
+
+        // Try to set up the device
+        match setup_device(device_name, device_file) {
+            Ok((setup, _, _)) => {
+                println!("Successfully reconnected to device");
+                return Ok(setup);
+            }
+            Err(e) => {
+                eprintln!("Reconnection attempt failed: {}", e);
+            }
+        }
+    }
+}
+
+/// Run the main event loop
+fn run_event_loop(
+    device: &mut evdev::Device,
+    virtual_device: &mut VirtualDevice,
+    polygons: &[Polygon],
+    running: &Arc<AtomicBool>,
+) -> LoopExitReason {
     // Track multitouch slot state
     // slot_blocked[slot] = true if touch started in edge zone
     // slot_positions[slot] = (x, y) - None means not yet known
@@ -314,12 +336,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Poll with 100ms timeout to allow checking running flag
         let fd = PollFd::new(device.as_fd(), PollFlags::POLLIN);
         match poll(&mut [fd], 100u16) {
-            Ok(0) => continue,                         // Timeout, check running flag
-            Ok(_) => {}                                // Events ready
+            Ok(0) => continue, // Timeout, check running flag
+            Ok(_) => {
+                // Check for POLLERR or POLLHUP which indicate device issues
+                if let Some(revents) = fd.revents() {
+                    if revents.contains(PollFlags::POLLERR) || revents.contains(PollFlags::POLLHUP)
+                    {
+                        return LoopExitReason::DeviceDisconnected;
+                    }
+                }
+            }
             Err(nix::errno::Errno::EINTR) => continue, // Interrupted by signal
             Err(e) => {
-                eprintln!("Poll error: {}", e);
-                break;
+                return LoopExitReason::FatalError(format!("Poll error: {}", e));
             }
         }
 
@@ -330,8 +359,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if e.kind() == std::io::ErrorKind::WouldBlock {
                     continue;
                 }
-                eprintln!("Error reading events: {}", e);
-                break;
+                if is_device_disconnected(&e) {
+                    eprintln!("Device disconnected: {}", e);
+                    return LoopExitReason::DeviceDisconnected;
+                }
+                return LoopExitReason::FatalError(format!("Error reading events: {}", e));
             }
         };
 
@@ -417,11 +449,115 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Emit all forwarded events as a batch
         if !events_to_forward.is_empty() {
-            virtual_device.emit(&events_to_forward)?;
+            if let Err(e) = virtual_device.emit(&events_to_forward) {
+                return LoopExitReason::FatalError(format!("Error emitting events: {}", e));
+            }
         }
     }
 
-    println!("\nShutting down...");
-    drop(device); // Releases grab
+    LoopExitReason::SignalReceived
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse command-line arguments
+    let cli = Cli::parse();
+
+    // Set up signal handling for clean shutdown (do this once, before device setup)
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    let mut signals = Signals::new([SIGINT, SIGTERM])?;
+    thread::spawn(move || {
+        for _ in signals.forever() {
+            r.store(false, Ordering::SeqCst);
+        }
+    });
+
+    // Initial device setup (failure exits the program)
+    let (mut setup, x_max, y_max) =
+        setup_device(cli.device_name.as_deref(), cli.device_file.as_ref())?;
+
+    // Build exclusion zone polygons from margins and explicit polygons
+    let mut polygons: Vec<Polygon> = Vec::new();
+
+    // Convert margins to exclusion polygons
+    if cli.margin_left > 0 {
+        let margin_px = (x_max * cli.margin_left) / 100;
+        polygons.push(Polygon::rectangle(0, 0, margin_px, y_max));
+        println!("Left margin: {}% ({}px)", cli.margin_left, margin_px);
+    }
+    if cli.margin_right > 0 {
+        let margin_px = (x_max * cli.margin_right) / 100;
+        polygons.push(Polygon::rectangle(x_max - margin_px, 0, x_max, y_max));
+        println!("Right margin: {}% ({}px)", cli.margin_right, margin_px);
+    }
+    if cli.margin_top > 0 {
+        let margin_px = (y_max * cli.margin_top) / 100;
+        polygons.push(Polygon::rectangle(0, 0, x_max, margin_px));
+        println!("Top margin: {}% ({}px)", cli.margin_top, margin_px);
+    }
+    if cli.margin_bottom > 0 {
+        let margin_px = (y_max * cli.margin_bottom) / 100;
+        polygons.push(Polygon::rectangle(0, y_max - margin_px, x_max, y_max));
+        println!("Bottom margin: {}% ({}px)", cli.margin_bottom, margin_px);
+    }
+
+    // Parse explicit polygon exclusion zones
+    for (i, polygon_str) in cli.polygon.iter().enumerate() {
+        let points = parse_polygon_string(polygon_str)
+            .map_err(|e| format!("Failed to parse polygon {} '{}': {}", i + 1, polygon_str, e))?;
+        let polygon = Polygon::from_percentages(&points, x_max, y_max)
+            .map_err(|e| format!("Failed to create polygon {}: {}", i + 1, e))?;
+        println!("Polygon {}: {} vertices", i + 1, polygon.vertices.len());
+
+        // Validate polygon and print warnings
+        for warning in polygon.validate() {
+            eprintln!("Warning: Polygon {}: {}", i + 1, warning);
+        }
+
+        polygons.push(polygon);
+    }
+
+    println!("Total exclusion zones: {} polygon(s)", polygons.len());
+
+    // Main loop with reconnection support
+    loop {
+        match run_event_loop(
+            &mut setup.device,
+            &mut setup.virtual_device,
+            &polygons,
+            &running,
+        ) {
+            LoopExitReason::SignalReceived => {
+                println!("\nShutting down...");
+                break;
+            }
+            LoopExitReason::DeviceDisconnected => {
+                eprintln!("Device disconnected, attempting to reconnect...");
+                // Drop the old setup to release the grab and close file descriptors
+                drop(setup);
+                // Try to reconnect with exponential backoff
+                match reconnect_with_retry(
+                    cli.device_name.as_deref(),
+                    cli.device_file.as_ref(),
+                    &running,
+                ) {
+                    Ok(new_setup) => {
+                        setup = new_setup;
+                        // Continue with the same polygons (assumes same device dimensions)
+                    }
+                    Err(e) => {
+                        // This only happens if shutdown was requested during reconnection
+                        println!("\nShutting down: {}", e);
+                        break;
+                    }
+                }
+            }
+            LoopExitReason::FatalError(e) => {
+                return Err(e.into());
+            }
+        }
+    }
+
     Ok(())
 }
