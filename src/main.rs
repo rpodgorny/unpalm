@@ -247,11 +247,11 @@ fn setup_device(
 
     // Copy device properties (INPUT_PROP_POINTER, etc.) - critical for libinput
     let props = device.properties();
-    builder = builder.with_properties(&props)?;
+    builder = builder.with_properties(props)?;
 
     // Copy relative axes if present
     if let Some(rel_axes) = device.supported_relative_axes() {
-        builder = builder.with_relative_axes(&rel_axes)?;
+        builder = builder.with_relative_axes(rel_axes)?;
     }
 
     // Copy all absolute axes from the source device
@@ -398,7 +398,7 @@ fn run_event_loop(
                         // Check if this is the first complete position
                         if old_x.is_none() {
                             if let Some(y) = old_y {
-                                if is_in_any_polygon(x, y, &polygons) {
+                                if is_in_any_polygon(x, y, polygons) {
                                     slot_blocked.insert(current_slot, true);
                                     println!("Slot {current_slot}: blocked (started at {x}, {y})");
                                 }
@@ -413,7 +413,7 @@ fn run_event_loop(
                         // Check if this is the first complete position
                         if old_y.is_none() {
                             if let Some(x) = old_x {
-                                if is_in_any_polygon(x, y, &polygons) {
+                                if is_in_any_polygon(x, y, polygons) {
                                     slot_blocked.insert(current_slot, true);
                                     println!("Slot {current_slot}: blocked (started at {x}, {y})");
                                 }
@@ -427,17 +427,17 @@ fn run_event_loop(
             // Block only slot-specific MT events for blocked slots
             // DO NOT block ABS_X/ABS_Y as they represent the overall pointer position
             if slot_blocked.get(&current_slot).copied().unwrap_or(false) {
-                if let evdev::EventSummary::AbsoluteAxis(_, code, _) = event.destructure() {
-                    match code {
-                        AbsoluteAxisCode::ABS_MT_POSITION_X
-                        | AbsoluteAxisCode::ABS_MT_POSITION_Y
-                        | AbsoluteAxisCode::ABS_MT_TOUCH_MAJOR
-                        | AbsoluteAxisCode::ABS_MT_TOUCH_MINOR
-                        | AbsoluteAxisCode::ABS_MT_PRESSURE => {
-                            forward = false;
-                        }
-                        _ => {}
-                    }
+                if let evdev::EventSummary::AbsoluteAxis(
+                    _,
+                    AbsoluteAxisCode::ABS_MT_POSITION_X
+                    | AbsoluteAxisCode::ABS_MT_POSITION_Y
+                    | AbsoluteAxisCode::ABS_MT_TOUCH_MAJOR
+                    | AbsoluteAxisCode::ABS_MT_TOUCH_MINOR
+                    | AbsoluteAxisCode::ABS_MT_PRESSURE,
+                    _,
+                ) = event.destructure()
+                {
+                    forward = false;
                 }
             }
 
