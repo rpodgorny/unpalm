@@ -2,6 +2,10 @@
 name = "unpalm"
 version = "0.1.0"
 edition = "2021"
+description = "Linux palm rejection filter for touchpads"
+license = "GPL-3.0"
+repository = "https://github.com/rpodgorny/unpalm"
+rust-version = "1.78"
 
 [dependencies]
 evdev = "0.13"
