@@ -31,7 +31,7 @@ struct DeviceSetup {
 
 /// Palm rejection filter for touchpads
 #[derive(clap::Parser, Debug)]
-#[command(name = "unpalm")]
+#[command(name = "unpalm", version)]
 #[command(about = "Filter palm touches from touchpad input", long_about = None)]
 struct Cli {
     /// Device name pattern to search for, supports wildcards (*) (e.g., "*ELAN*4448")
