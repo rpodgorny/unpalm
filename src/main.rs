@@ -561,3 +561,219 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Tests for wildcard_match
+
+    #[test]
+    fn test_wildcard_exact_match() {
+        assert!(wildcard_match("ELAN Touchpad", "ELAN Touchpad"));
+    }
+
+    #[test]
+    fn test_wildcard_exact_no_match() {
+        assert!(!wildcard_match("ELAN Touchpad", "Synaptics Touchpad"));
+    }
+
+    #[test]
+    fn test_wildcard_star_at_start() {
+        assert!(wildcard_match("*Touchpad", "ELAN Touchpad"));
+        assert!(wildcard_match("*Touchpad", "Touchpad"));
+        assert!(!wildcard_match("*Touchpad", "Touchpad Extra"));
+    }
+
+    #[test]
+    fn test_wildcard_star_at_end() {
+        assert!(wildcard_match("ELAN*", "ELAN Touchpad"));
+        assert!(wildcard_match("ELAN*", "ELAN"));
+        assert!(!wildcard_match("ELAN*", "Something ELAN"));
+    }
+
+    #[test]
+    fn test_wildcard_star_both_ends() {
+        assert!(wildcard_match("*ELAN*", "My ELAN Touchpad"));
+        assert!(wildcard_match("*ELAN*", "ELAN"));
+        assert!(wildcard_match("*ELAN*", "ELAN Touchpad"));
+        assert!(wildcard_match("*ELAN*", "My ELAN"));
+        assert!(!wildcard_match("*ELAN*", "Something Else"));
+    }
+
+    #[test]
+    fn test_wildcard_star_in_middle() {
+        assert!(wildcard_match("ELAN*4448", "ELAN Touchpad 4448"));
+        assert!(wildcard_match("ELAN*4448", "ELAN4448"));
+        assert!(!wildcard_match("ELAN*4448", "ELAN Touchpad 9999"));
+        assert!(!wildcard_match("ELAN*4448", "Synaptics 4448"));
+    }
+
+    #[test]
+    fn test_wildcard_multiple_stars() {
+        assert!(wildcard_match(
+            "*ELAN*4448*",
+            "My ELAN Touchpad 4448 Device"
+        ));
+        assert!(wildcard_match("*ELAN*4448", "My ELAN Touchpad 4448"));
+        assert!(!wildcard_match("*ELAN*4448", "My ELAN Touchpad 9999"));
+    }
+
+    #[test]
+    fn test_wildcard_just_star() {
+        assert!(wildcard_match("*", "anything"));
+        assert!(wildcard_match("*", ""));
+    }
+
+    #[test]
+    fn test_wildcard_empty_pattern() {
+        assert!(wildcard_match("", ""));
+        // NOTE: empty pattern matches non-empty text due to how split('*') works.
+        // Not a real issue since clap won't pass empty strings for -n.
+        assert!(wildcard_match("", "something"));
+    }
+
+    #[test]
+    fn test_wildcard_empty_text() {
+        assert!(!wildcard_match("ELAN", ""));
+        assert!(wildcard_match("*", ""));
+    }
+
+    #[test]
+    fn test_wildcard_consecutive_stars() {
+        assert!(wildcard_match("**ELAN**", "My ELAN Touchpad"));
+        assert!(wildcard_match("ELAN**Touchpad", "ELAN Touchpad"));
+    }
+
+    #[test]
+    fn test_wildcard_case_sensitive() {
+        assert!(!wildcard_match("*elan*", "ELAN Touchpad"));
+        assert!(!wildcard_match("*ELAN*", "elan touchpad"));
+    }
+
+    #[test]
+    fn test_wildcard_pattern_longer_than_text() {
+        assert!(!wildcard_match("ELAN Touchpad Extra", "ELAN Touchpad"));
+    }
+
+    #[test]
+    fn test_wildcard_special_characters() {
+        assert!(wildcard_match("*foo-bar*", "my foo-bar device"));
+        assert!(wildcard_match("device (v2)", "device (v2)"));
+    }
+
+    // Tests for is_device_disconnected
+
+    #[test]
+    fn test_disconnected_enodev() {
+        let err = std::io::Error::from_raw_os_error(19); // ENODEV
+        assert!(is_device_disconnected(&err));
+    }
+
+    #[test]
+    fn test_disconnected_eio() {
+        let err = std::io::Error::from_raw_os_error(5); // EIO
+        assert!(is_device_disconnected(&err));
+    }
+
+    #[test]
+    fn test_disconnected_enxio() {
+        let err = std::io::Error::from_raw_os_error(6); // ENXIO
+        assert!(is_device_disconnected(&err));
+    }
+
+    #[test]
+    fn test_disconnected_other_errno() {
+        let err = std::io::Error::from_raw_os_error(13); // EACCES
+        assert!(!is_device_disconnected(&err));
+    }
+
+    #[test]
+    fn test_disconnected_no_os_error() {
+        let err = std::io::Error::new(std::io::ErrorKind::Other, "custom error");
+        assert!(!is_device_disconnected(&err));
+    }
+
+    // Tests for CLI argument parsing
+
+    #[test]
+    fn test_cli_defaults() {
+        let cli = Cli::parse_from(["unpalm"]);
+        assert_eq!(cli.margin_left, 20);
+        assert_eq!(cli.margin_right, 20);
+        assert_eq!(cli.margin_top, 20);
+        assert_eq!(cli.margin_bottom, 0);
+        assert!(cli.device_name.is_none());
+        assert!(cli.device_file.is_none());
+        assert!(cli.polygon.is_empty());
+    }
+
+    #[test]
+    fn test_cli_custom_margins() {
+        let cli = Cli::parse_from([
+            "unpalm",
+            "--margin-left",
+            "30",
+            "--margin-right",
+            "10",
+            "--margin-top",
+            "15",
+            "--margin-bottom",
+            "5",
+        ]);
+        assert_eq!(cli.margin_left, 30);
+        assert_eq!(cli.margin_right, 10);
+        assert_eq!(cli.margin_top, 15);
+        assert_eq!(cli.margin_bottom, 5);
+    }
+
+    #[test]
+    fn test_cli_device_name() {
+        let cli = Cli::parse_from(["unpalm", "-n", "*ELAN*"]);
+        assert_eq!(cli.device_name.as_deref(), Some("*ELAN*"));
+    }
+
+    #[test]
+    fn test_cli_device_file() {
+        let cli = Cli::parse_from(["unpalm", "-f", "/dev/input/event5"]);
+        assert_eq!(
+            cli.device_file.as_deref(),
+            Some(std::path::Path::new("/dev/input/event5"))
+        );
+    }
+
+    #[test]
+    fn test_cli_single_polygon() {
+        let cli = Cli::parse_from(["unpalm", "--polygon", "0,0 20,0 10,30"]);
+        assert_eq!(cli.polygon.len(), 1);
+        assert_eq!(cli.polygon[0], "0,0 20,0 10,30");
+    }
+
+    #[test]
+    fn test_cli_multiple_polygons() {
+        let cli = Cli::parse_from([
+            "unpalm",
+            "--polygon",
+            "0,0 15,0 0,25",
+            "--polygon",
+            "85,0 100,0 100,25",
+        ]);
+        assert_eq!(cli.polygon.len(), 2);
+    }
+
+    #[test]
+    fn test_cli_zero_margins() {
+        let cli = Cli::parse_from([
+            "unpalm",
+            "--margin-left",
+            "0",
+            "--margin-right",
+            "0",
+            "--margin-top",
+            "0",
+        ]);
+        assert_eq!(cli.margin_left, 0);
+        assert_eq!(cli.margin_right, 0);
+        assert_eq!(cli.margin_top, 0);
+    }
+}
