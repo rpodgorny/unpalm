@@ -209,10 +209,11 @@ fn find_device(
 
 /// Check if an I/O error indicates the device was disconnected
 fn is_device_disconnected(error: &std::io::Error) -> bool {
-    // ENODEV (19): No such device
-    // EIO (5): I/O error
-    // ENXIO (6): No such device or address
-    matches!(error.raw_os_error(), Some(19) | Some(5) | Some(6))
+    use nix::errno::Errno;
+    error
+        .raw_os_error()
+        .map(Errno::from_raw)
+        .is_some_and(|e| matches!(e, Errno::ENODEV | Errno::EIO | Errno::ENXIO))
 }
 
 /// Set up the device and create the virtual device
