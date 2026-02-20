@@ -68,7 +68,7 @@ impl Polygon {
         }
 
         // 2. Check for zero/near-zero area using shoelace formula
-        let area = self.signed_area().abs();
+        let area = self.area();
         if area < 1.0 {
             // Less than 1 square unit
             warnings.push("Polygon has near-zero area (may be degenerate)".to_string());
@@ -82,8 +82,8 @@ impl Polygon {
         warnings
     }
 
-    /// Calculate the signed area of the polygon using shoelace formula
-    fn signed_area(&self) -> f64 {
+    /// Calculate the area of the polygon using the shoelace formula
+    fn area(&self) -> f64 {
         let mut sum = 0i64;
         for i in 0..self.vertices.len() {
             let j = (i + 1) % self.vertices.len();
@@ -496,21 +496,21 @@ mod tests {
     }
 
     #[test]
-    fn test_signed_area_triangle() {
+    fn test_area_triangle() {
         let polygon = Polygon {
             vertices: vec![(0, 0), (100, 0), (0, 100)],
         };
-        let area = polygon.signed_area();
+        let area = polygon.area();
         // Area of right triangle with base=100, height=100 is 5000
         assert!((area - 5000.0).abs() < 1.0);
     }
 
     #[test]
-    fn test_signed_area_rectangle() {
+    fn test_area_rectangle() {
         let polygon = Polygon {
             vertices: vec![(0, 0), (100, 0), (100, 50), (0, 50)],
         };
-        let area = polygon.signed_area();
+        let area = polygon.area();
         // Area of 100x50 rectangle is 5000
         assert!((area - 5000.0).abs() < 1.0);
     }
