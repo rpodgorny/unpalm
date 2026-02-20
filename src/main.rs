@@ -43,20 +43,20 @@ struct Cli {
     device_file: Option<PathBuf>,
 
     /// Left margin as percentage of touchpad width
-    #[arg(long, default_value_t = 20)]
-    margin_left: i32,
+    #[arg(long, default_value_t = 20.0)]
+    margin_left: f32,
 
     /// Right margin as percentage of touchpad width
-    #[arg(long, default_value_t = 20)]
-    margin_right: i32,
+    #[arg(long, default_value_t = 20.0)]
+    margin_right: f32,
 
     /// Top margin as percentage of touchpad height
-    #[arg(long, default_value_t = 20)]
-    margin_top: i32,
+    #[arg(long, default_value_t = 20.0)]
+    margin_top: f32,
 
     /// Bottom margin as percentage of touchpad height
-    #[arg(long, default_value_t = 0)]
-    margin_bottom: i32,
+    #[arg(long, default_value_t = 0.0)]
+    margin_bottom: f32,
 
     /// Polygon exclusion zones (format: "x1,y1 x2,y2 x3,y3 ..." where ALL coordinates are PERCENTAGES 0-100)
     /// Example: "0,0 20,0 10,30" creates a triangle at the top-left corner
@@ -482,23 +482,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut polygons: Vec<Polygon> = Vec::new();
 
     // Convert margins to exclusion polygons
-    if cli.margin_left > 0 {
-        let margin_px = (x_max * cli.margin_left) / 100;
+    if cli.margin_left > 0.0 {
+        let margin_px = (x_max as f32 * cli.margin_left / 100.0) as i32;
         polygons.push(Polygon::rectangle(0, 0, margin_px, y_max));
         println!("Left margin: {}% ({}px)", cli.margin_left, margin_px);
     }
-    if cli.margin_right > 0 {
-        let margin_px = (x_max * cli.margin_right) / 100;
+    if cli.margin_right > 0.0 {
+        let margin_px = (x_max as f32 * cli.margin_right / 100.0) as i32;
         polygons.push(Polygon::rectangle(x_max - margin_px, 0, x_max, y_max));
         println!("Right margin: {}% ({}px)", cli.margin_right, margin_px);
     }
-    if cli.margin_top > 0 {
-        let margin_px = (y_max * cli.margin_top) / 100;
+    if cli.margin_top > 0.0 {
+        let margin_px = (y_max as f32 * cli.margin_top / 100.0) as i32;
         polygons.push(Polygon::rectangle(0, 0, x_max, margin_px));
         println!("Top margin: {}% ({}px)", cli.margin_top, margin_px);
     }
-    if cli.margin_bottom > 0 {
-        let margin_px = (y_max * cli.margin_bottom) / 100;
+    if cli.margin_bottom > 0.0 {
+        let margin_px = (y_max as f32 * cli.margin_bottom / 100.0) as i32;
         polygons.push(Polygon::rectangle(0, y_max - margin_px, x_max, y_max));
         println!("Bottom margin: {}% ({}px)", cli.margin_bottom, margin_px);
     }
@@ -700,10 +700,10 @@ mod tests {
     #[test]
     fn test_cli_defaults() {
         let cli = Cli::parse_from(["unpalm"]);
-        assert_eq!(cli.margin_left, 20);
-        assert_eq!(cli.margin_right, 20);
-        assert_eq!(cli.margin_top, 20);
-        assert_eq!(cli.margin_bottom, 0);
+        assert_eq!(cli.margin_left, 20.0);
+        assert_eq!(cli.margin_right, 20.0);
+        assert_eq!(cli.margin_top, 20.0);
+        assert_eq!(cli.margin_bottom, 0.0);
         assert!(cli.device_name.is_none());
         assert!(cli.device_file.is_none());
         assert!(cli.polygon.is_empty());
@@ -722,10 +722,10 @@ mod tests {
             "--margin-bottom",
             "5",
         ]);
-        assert_eq!(cli.margin_left, 30);
-        assert_eq!(cli.margin_right, 10);
-        assert_eq!(cli.margin_top, 15);
-        assert_eq!(cli.margin_bottom, 5);
+        assert_eq!(cli.margin_left, 30.0);
+        assert_eq!(cli.margin_right, 10.0);
+        assert_eq!(cli.margin_top, 15.0);
+        assert_eq!(cli.margin_bottom, 5.0);
     }
 
     #[test]
@@ -773,8 +773,8 @@ mod tests {
             "--margin-top",
             "0",
         ]);
-        assert_eq!(cli.margin_left, 0);
-        assert_eq!(cli.margin_right, 0);
-        assert_eq!(cli.margin_top, 0);
+        assert_eq!(cli.margin_left, 0.0);
+        assert_eq!(cli.margin_right, 0.0);
+        assert_eq!(cli.margin_top, 0.0);
     }
 }
