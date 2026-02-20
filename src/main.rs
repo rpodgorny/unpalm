@@ -537,7 +537,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Device disconnected, attempting to reconnect...");
                 // Drop the old setup to release the grab and close file descriptors
                 drop(setup);
-                // Try to reconnect with exponential backoff
+                // Try to reconnect, retrying every second
                 match reconnect_with_retry(
                     cli.device_name.as_deref(),
                     cli.device_file.as_ref(),
