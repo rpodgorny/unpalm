@@ -484,12 +484,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Convert margins to exclusion polygons
     if cli.margin_left > 0.0 {
         let margin_px = (x_max as f32 * cli.margin_left / 100.0) as i32;
-        polygons.push(Polygon::rectangle(0, 0, margin_px, y_max));
+        polygons.push(Polygon {
+            vertices: vec![(0, 0), (margin_px, 0), (0, y_max)],
+        });
         println!("Left margin: {}% ({}px)", cli.margin_left, margin_px);
     }
     if cli.margin_right > 0.0 {
         let margin_px = (x_max as f32 * cli.margin_right / 100.0) as i32;
-        polygons.push(Polygon::rectangle(x_max - margin_px, 0, x_max, y_max));
+        polygons.push(Polygon {
+            vertices: vec![(x_max - margin_px, 0), (x_max, 0), (x_max, y_max)],
+        });
         println!("Right margin: {}% ({}px)", cli.margin_right, margin_px);
     }
     if cli.margin_top > 0.0 {

@@ -412,17 +412,27 @@ mod tests {
         let margin = 10;
 
         let mut polygons = vec![];
-        polygons.push(Polygon::rectangle(0, 0, margin, y_max)); // Left
-        polygons.push(Polygon::rectangle(x_max - margin, 0, x_max, y_max)); // Right
+        // Left: triangle wide at top, tapering to bottom-left
+        polygons.push(Polygon {
+            vertices: vec![(0, 0), (margin, 0), (0, y_max)],
+        });
+        // Right: triangle wide at top, tapering to bottom-right
+        polygons.push(Polygon {
+            vertices: vec![(x_max - margin, 0), (x_max, 0), (x_max, y_max)],
+        });
         polygons.push(Polygon::rectangle(0, 0, x_max, margin)); // Top
         polygons.push(Polygon::rectangle(0, y_max - margin, x_max, y_max)); // Bottom
 
         // Center should not be blocked
         assert!(!is_in_any_polygon(50, 50, &polygons));
 
-        // Margins should be blocked
-        assert!(is_in_any_polygon(5, 50, &polygons)); // Left margin
-        assert!(is_in_any_polygon(95, 50, &polygons)); // Right margin
+        // Left triangle: blocked near top-left, not blocked at mid-height
+        assert!(is_in_any_polygon(3, 15, &polygons)); // Inside left triangle near top
+        assert!(!is_in_any_polygon(5, 50, &polygons)); // Mid-height, outside tapered triangle
+                                                       // Right triangle: blocked near top-right, not blocked at mid-height
+        assert!(is_in_any_polygon(97, 15, &polygons)); // Inside right triangle near top
+        assert!(!is_in_any_polygon(95, 60, &polygons)); // Mid-height, outside tapered triangle
+                                                        // Top/bottom rectangles unchanged
         assert!(is_in_any_polygon(50, 5, &polygons)); // Top margin
         assert!(is_in_any_polygon(50, 95, &polygons)); // Bottom margin
     }
