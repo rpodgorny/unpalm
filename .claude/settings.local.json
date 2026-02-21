@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(./target/release/unpalm:*)",
+      "Bash(cargo clippy:*)",
+      "WebSearch",
+      "WebFetch(domain:forums.macrumors.com)",
+      "WebFetch(domain:discussions.apple.com)",
+      "WebFetch(domain:www.latticepoint.org)",
+      "Bash(cargo doc:*)",
+      "Bash(git -C /home/radek/syncthing/rpodgorny/work/unpalm log --format=\"%H %ai %s\" --all)",
+      "Bash(git -C /home/radek/syncthing/rpodgorny/work/unpalm ls-files:*)",
+      "Bash(git -C /home/radek/syncthing/rpodgorny/work/unpalm show --stat HEAD)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git -C /home/radek/syncthing/rpodgorny/work/unpalm log --oneline --all)",
+      "Bash(git -C /home/radek/syncthing/rpodgorny/work/unpalm tag --list)",
+      "Bash(getcap:*)",
+      "Bash(getfacl:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(systemd-analyze verify:*)"
+    ]
+  }
+}
