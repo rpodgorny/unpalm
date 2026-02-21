@@ -67,7 +67,7 @@ Build the project:
 cargo build --release
 ```
 
-Run with default settings (20% margins on left, right, and top):
+Run with default settings (auto-detect touchpad, built-in exclusion zones):
 
 ```bash
 sudo ./target/release/unpalm
@@ -75,23 +75,50 @@ sudo ./target/release/unpalm
 
 The tool will auto-detect your touchpad and create a filtered virtual device.
 
+### Default Exclusion Zones
+
+With no arguments, unpalm blocks touches starting in these zones:
+
+```
+left 30%                         right 30%
+(triangle)                      (triangle)
++----------------------------------------+
+|########################################|
+|########################################|  <- top 20% (rectangle)
+|#########/                    \#########|
+|#######/                        \#######|
+|#####/            OK              \#####|
+|###/                                \###|
+|##/                                  \##|
+|#/                                    \#|
+|/               OK                     \|
+|                                        |
++----------------------------------------+
+
+  # = blocked zone    OK = usable area
+```
+
+The default zones are a top 20% rectangle plus left/right 30% triangles. The triangles are wide at the top (where the top rectangle meets them) and taper to a point at the bottom corners. This shape works well because palms typically rest at the edges near the top of the touchpad.
+
+When any `--margin-*` or `--polygon` argument is given, **all defaults are replaced** - only the explicitly specified zones apply. The `--margin-*` flags always produce rectangles; use `--polygon` for triangles or other shapes.
+
 ## CLI Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-n, --device-name <PATTERN>` | Device name pattern with wildcard support (e.g., `*ELAN*4448`) | Auto-detect |
-| `-f, --device-file <PATH>` | Device file path (e.g., `/dev/input/event5`) | Auto-detect |
-| `--margin-left <PERCENT>` | Left margin as percentage of touchpad width | 20 |
-| `--margin-right <PERCENT>` | Right margin as percentage of touchpad width | 20 |
-| `--margin-top <PERCENT>` | Top margin as percentage of touchpad height | 20 |
-| `--margin-bottom <PERCENT>` | Bottom margin as percentage of touchpad height | 0 |
-| `--polygon <POINTS>` | Polygon exclusion zone (format: `"x1,y1 x2,y2 x3,y3"` where x,y are percentages 0-100) | None |
+| Option | Description |
+|--------|-------------|
+| `-n, --device-name <PATTERN>` | Device name pattern with wildcard support (e.g., `*ELAN*4448`) |
+| `-f, --device-file <PATH>` | Device file path (e.g., `/dev/input/event5`) |
+| `--margin-left <PERCENT>` | Left margin as percentage of touchpad width (rectangle) |
+| `--margin-right <PERCENT>` | Right margin as percentage of touchpad width (rectangle) |
+| `--margin-top <PERCENT>` | Top margin as percentage of touchpad height (rectangle) |
+| `--margin-bottom <PERCENT>` | Bottom margin as percentage of touchpad height (rectangle) |
+| `--polygon <POINTS>` | Polygon exclusion zone (format: `"x1,y1 x2,y2 x3,y3"` where x,y are percentages 0-100) |
 
-**Note:** All polygon coordinates are specified as percentages (0-100) of the touchpad's width/height, making configurations portable across different touchpad sizes.
+**Note:** With no arguments, built-in defaults apply (30% side triangles + 20% top rectangle). When any `--margin-*` or `--polygon` is specified, all defaults are replaced. All coordinates are percentages (0-100) of the touchpad's width/height, making configurations portable across different touchpad sizes.
 
 ## Usage Examples
 
-**Auto-detect touchpad with default margins:**
+**Auto-detect touchpad with default exclusion zones:**
 ```bash
 sudo ./target/release/unpalm
 ```
@@ -101,16 +128,29 @@ sudo ./target/release/unpalm
 sudo ./target/release/unpalm -n "*Synaptics*"
 ```
 
-**Custom margins (30% left/right, 15% top, 10% bottom):**
+**Custom rectangular margins (30% left/right, 15% top, 10% bottom):**
 ```bash
 sudo ./target/release/unpalm --margin-left 30 --margin-right 30 --margin-top 15 --margin-bottom 10
 ```
 
-**No margins, only a custom triangular exclusion zone:**
+```
+left 30%                         right 30%
+(rectangle)                    (rectangle)
++----------------------------------------+
+|########################################|  <- top 15% (rectangle)
+|##########|                  |##########|
+|##########|                  |##########|
+|##########|   usable area    |##########|
+|##########|                  |##########|
+|##########|                  |##########|
+|########################################|  <- bottom 10% (rectangle)
++----------------------------------------+
+```
+
+**Only a custom triangular exclusion zone (no defaults):**
 ```bash
 # Triangle at top-left corner (coordinates are percentages: 0-100)
-sudo ./target/release/unpalm --margin-left 0 --margin-right 0 --margin-top 0 \
-  --polygon "0,0 20,0 10,30"
+sudo ./target/release/unpalm --polygon "0,0 20,0 10,30"
 ```
 
 **Multiple polygon zones:**
@@ -119,6 +159,21 @@ sudo ./target/release/unpalm --margin-left 0 --margin-right 0 --margin-top 0 \
 sudo ./target/release/unpalm \
   --polygon "0,0 15,0 0,25" \
   --polygon "85,0 100,0 100,25"
+```
+
+```
+top-left 15x25%           top-right 15x25%
+triangle                          triangle
++----------------------------------------+
+|######/                          \######|
+|####/                              \####|
+|##/                                  \##|
+|/                                      \|
+|                                        |
+|              usable area               |
+|                                        |
+|                                        |
++----------------------------------------+
 ```
 
 **Specify exact device file:**
