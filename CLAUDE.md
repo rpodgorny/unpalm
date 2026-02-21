@@ -67,7 +67,9 @@ All code lives in `src/main.rs` (~740 lines). This was deliberately vibe-coded f
 - `Polygon::contains()`: Ray casting algorithm for point-in-polygon testing
 - `Polygon::from_percentages()`: Converts percentage coordinates to absolute touchpad coordinates
 - `Polygon::rectangle()`: Helper for creating rectangular exclusion zones from margins
-- Margins are converted to rectangle polygons at startup
+- `--margin-*` flags always produce rectangles
+- Default behavior (no args): 30% side triangles + 20% top rectangle
+- Any explicit `--margin-*` or `--polygon` arg replaces all defaults
 
 **Event Loop (lines 391-502):**
 - Uses `nix::poll()` for non-blocking event reading with signal handling
@@ -120,7 +122,9 @@ Touch lifecycle per slot:
 ## Configuration
 
 All configuration is via CLI arguments (no config file):
-- Margins: `--margin-{left,right,top,bottom}` as percentages (0-100)
+- **No arguments:** Built-in defaults apply (top 20% rectangle + left/right 30% triangles)
+- **Any explicit arg replaces all defaults** - only the specified zones apply
+- Margins: `--margin-{left,right,top,bottom}` as percentages (0-100), always produce **rectangles**
 - Custom polygons: `--polygon "x1,y1 x2,y2 x3,y3 ..."` where **ALL coordinates are percentages 0-100** (repeatable)
   - Example: `--polygon "0,0 20,0 10,30"` creates a triangle at top-left corner
   - Percentages make configurations portable across different touchpad sizes

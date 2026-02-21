@@ -42,21 +42,21 @@ struct Cli {
     #[arg(short = 'f', long)]
     device_file: Option<PathBuf>,
 
-    /// Left margin as percentage of touchpad width
-    #[arg(long, default_value_t = 20.0)]
-    margin_left: f32,
+    /// Left margin as percentage of touchpad width (rectangle)
+    #[arg(long)]
+    margin_left: Option<f32>,
 
-    /// Right margin as percentage of touchpad width
-    #[arg(long, default_value_t = 20.0)]
-    margin_right: f32,
+    /// Right margin as percentage of touchpad width (rectangle)
+    #[arg(long)]
+    margin_right: Option<f32>,
 
-    /// Top margin as percentage of touchpad height
-    #[arg(long, default_value_t = 20.0)]
-    margin_top: f32,
+    /// Top margin as percentage of touchpad height (rectangle)
+    #[arg(long)]
+    margin_top: Option<f32>,
 
-    /// Bottom margin as percentage of touchpad height
-    #[arg(long, default_value_t = 0.0)]
-    margin_bottom: f32,
+    /// Bottom margin as percentage of touchpad height (rectangle)
+    #[arg(long)]
+    margin_bottom: Option<f32>,
 
     /// Polygon exclusion zones (format: "x1,y1 x2,y2 x3,y3 ..." where ALL coordinates are PERCENTAGES 0-100)
     /// Example: "0,0 20,0 10,30" creates a triangle at the top-left corner
@@ -481,46 +481,80 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build exclusion zone polygons from margins and explicit polygons
     let mut polygons: Vec<Polygon> = Vec::new();
 
-    // Convert margins to exclusion polygons
-    if cli.margin_left > 0.0 {
-        let margin_px = (x_max as f32 * cli.margin_left / 100.0) as i32;
-        polygons.push(Polygon {
-            vertices: vec![(0, 0), (margin_px, 0), (0, y_max)],
-        });
-        println!("Left margin: {}% ({}px)", cli.margin_left, margin_px);
-    }
-    if cli.margin_right > 0.0 {
-        let margin_px = (x_max as f32 * cli.margin_right / 100.0) as i32;
-        polygons.push(Polygon {
-            vertices: vec![(x_max - margin_px, 0), (x_max, 0), (x_max, y_max)],
-        });
-        println!("Right margin: {}% ({}px)", cli.margin_right, margin_px);
-    }
-    if cli.margin_top > 0.0 {
-        let margin_px = (y_max as f32 * cli.margin_top / 100.0) as i32;
-        polygons.push(Polygon::rectangle(0, 0, x_max, margin_px));
-        println!("Top margin: {}% ({}px)", cli.margin_top, margin_px);
-    }
-    if cli.margin_bottom > 0.0 {
-        let margin_px = (y_max as f32 * cli.margin_bottom / 100.0) as i32;
-        polygons.push(Polygon::rectangle(0, y_max - margin_px, x_max, y_max));
-        println!("Bottom margin: {}% ({}px)", cli.margin_bottom, margin_px);
-    }
+    let has_explicit_args = cli.margin_left.is_some()
+        || cli.margin_right.is_some()
+        || cli.margin_top.is_some()
+        || cli.margin_bottom.is_some()
+        || !cli.polygon.is_empty();
 
-    // Parse explicit polygon exclusion zones
-    for (i, polygon_str) in cli.polygon.iter().enumerate() {
-        let points = parse_polygon_string(polygon_str)
-            .map_err(|e| format!("Failed to parse polygon {} '{}': {}", i + 1, polygon_str, e))?;
-        let polygon = Polygon::from_percentages(&points, x_max, y_max)
-            .map_err(|e| format!("Failed to create polygon {}: {}", i + 1, e))?;
-        println!("Polygon {}: {} vertices", i + 1, polygon.vertices.len());
-
-        // Validate polygon and print warnings
-        for warning in polygon.validate() {
-            eprintln!("Warning: Polygon {}: {}", i + 1, warning);
+    if has_explicit_args {
+        // Explicit args given: only use what was specified, margins produce rectangles
+        if let Some(pct) = cli.margin_left {
+            if pct > 0.0 {
+                let margin_px = (x_max as f32 * pct / 100.0) as i32;
+                polygons.push(Polygon::rectangle(0, 0, margin_px, y_max));
+                println!("Left margin: {pct}% ({margin_px}px) [rectangle]");
+            }
+        }
+        if let Some(pct) = cli.margin_right {
+            if pct > 0.0 {
+                let margin_px = (x_max as f32 * pct / 100.0) as i32;
+                polygons.push(Polygon::rectangle(x_max - margin_px, 0, x_max, y_max));
+                println!("Right margin: {pct}% ({margin_px}px) [rectangle]");
+            }
+        }
+        if let Some(pct) = cli.margin_top {
+            if pct > 0.0 {
+                let margin_px = (y_max as f32 * pct / 100.0) as i32;
+                polygons.push(Polygon::rectangle(0, 0, x_max, margin_px));
+                println!("Top margin: {pct}% ({margin_px}px) [rectangle]");
+            }
+        }
+        if let Some(pct) = cli.margin_bottom {
+            if pct > 0.0 {
+                let margin_px = (y_max as f32 * pct / 100.0) as i32;
+                polygons.push(Polygon::rectangle(0, y_max - margin_px, x_max, y_max));
+                println!("Bottom margin: {pct}% ({margin_px}px) [rectangle]");
+            }
         }
 
-        polygons.push(polygon);
+        // Parse explicit polygon exclusion zones
+        for (i, polygon_str) in cli.polygon.iter().enumerate() {
+            let points = parse_polygon_string(polygon_str).map_err(|e| {
+                format!("Failed to parse polygon {} '{}': {}", i + 1, polygon_str, e)
+            })?;
+            let polygon = Polygon::from_percentages(&points, x_max, y_max)
+                .map_err(|e| format!("Failed to create polygon {}: {}", i + 1, e))?;
+            println!("Polygon {}: {} vertices", i + 1, polygon.vertices.len());
+
+            for warning in polygon.validate() {
+                eprintln!("Warning: Polygon {}: {}", i + 1, warning);
+            }
+
+            polygons.push(polygon);
+        }
+    } else {
+        // No explicit args: apply built-in defaults
+        // Top 20% rectangle
+        let top_px = (y_max as f32 * 20.0 / 100.0) as i32;
+        polygons.push(Polygon::rectangle(0, 0, x_max, top_px));
+        println!("Default: top 20% rectangle ({top_px}px)");
+
+        // Left 30% triangle: (0,0) -> (left_px,0) -> (0,y_max)
+        let left_px = (x_max as f32 * 30.0 / 100.0) as i32;
+        polygons.push(Polygon {
+            vertices: vec![(0, 0), (left_px, 0), (0, y_max)],
+        });
+        println!("Default: left 30% triangle ({left_px}px)");
+
+        // Right 30% triangle: (x_max-right_px,0) -> (x_max,0) -> (x_max,y_max)
+        let right_px = (x_max as f32 * 30.0 / 100.0) as i32;
+        polygons.push(Polygon {
+            vertices: vec![(x_max - right_px, 0), (x_max, 0), (x_max, y_max)],
+        });
+        println!("Default: right 30% triangle ({right_px}px)");
+
+        println!("Using default exclusion zones");
     }
 
     println!("Total exclusion zones: {} polygon(s)", polygons.len());
@@ -704,10 +738,10 @@ mod tests {
     #[test]
     fn test_cli_defaults() {
         let cli = Cli::parse_from(["unpalm"]);
-        assert_eq!(cli.margin_left, 20.0);
-        assert_eq!(cli.margin_right, 20.0);
-        assert_eq!(cli.margin_top, 20.0);
-        assert_eq!(cli.margin_bottom, 0.0);
+        assert!(cli.margin_left.is_none());
+        assert!(cli.margin_right.is_none());
+        assert!(cli.margin_top.is_none());
+        assert!(cli.margin_bottom.is_none());
         assert!(cli.device_name.is_none());
         assert!(cli.device_file.is_none());
         assert!(cli.polygon.is_empty());
@@ -726,10 +760,10 @@ mod tests {
             "--margin-bottom",
             "5",
         ]);
-        assert_eq!(cli.margin_left, 30.0);
-        assert_eq!(cli.margin_right, 10.0);
-        assert_eq!(cli.margin_top, 15.0);
-        assert_eq!(cli.margin_bottom, 5.0);
+        assert_eq!(cli.margin_left, Some(30.0));
+        assert_eq!(cli.margin_right, Some(10.0));
+        assert_eq!(cli.margin_top, Some(15.0));
+        assert_eq!(cli.margin_bottom, Some(5.0));
     }
 
     #[test]
@@ -777,8 +811,8 @@ mod tests {
             "--margin-top",
             "0",
         ]);
-        assert_eq!(cli.margin_left, 0.0);
-        assert_eq!(cli.margin_right, 0.0);
-        assert_eq!(cli.margin_top, 0.0);
+        assert_eq!(cli.margin_left, Some(0.0));
+        assert_eq!(cli.margin_right, Some(0.0));
+        assert_eq!(cli.margin_top, Some(0.0));
     }
 }
