@@ -52,26 +52,38 @@ sudo systemctl start unpalm.service
 
 ## Architecture
 
-### Single-File Design
-All code lives in `src/main.rs` (~740 lines). This was deliberately vibe-coded for speed, not architectural purity.
+### Two-File Design
+- `src/main.rs` (~820 lines): Device detection, CLI, event loop, virtual device creation, reconnection logic
+- `src/polygon.rs` (~580 lines): Polygon struct, ray casting, parsing, validation
 
 ### Key Components
 
-**Device Detection (lines 136-266):**
+**Device Detection (`main.rs`):**
 - `is_touchpad()`: Identifies touchpads via evdev properties (INPUT_PROP_POINTER without INPUT_PROP_DIRECT)
 - `find_device()`: Three-mode device discovery: explicit path, name pattern with wildcard matching, or auto-detection
+- `find_all_touchpads()`: Helper that enumerates all touchpad devices
 - `wildcard_match()`: Simple wildcard pattern matching for device names
 
-**Exclusion Zones (lines 12-96, 268-271):**
+**Exclusion Zones (`polygon.rs`):**
 - `Polygon` struct: Represents exclusion zones as arbitrary polygons in absolute coordinates
 - `Polygon::contains()`: Ray casting algorithm for point-in-polygon testing
 - `Polygon::from_percentages()`: Converts percentage coordinates to absolute touchpad coordinates
 - `Polygon::rectangle()`: Helper for creating rectangular exclusion zones from margins
+- `Polygon::validate()`: Checks for degenerate polygons (duplicate vertices, zero area, self-intersection)
+- `parse_polygon_string()`: Parses CLI polygon strings into percentage coordinates
+- `is_in_any_polygon()`: Tests a point against all exclusion polygons
 - `--margin-*` flags always produce rectangles
 - Default behavior (no args): 30% side triangles + 20% top rectangle
 - Any explicit `--margin-*` or `--polygon` arg replaces all defaults
 
-**Event Loop (lines 391-502):**
+**Device Setup & Reconnection (`main.rs`):**
+- `setup_device()`: Finds touchpad, reads dimensions, creates virtual device, grabs physical device
+- `reconnect_with_retry()`: Retries device setup every second after disconnection
+- `is_device_disconnected()`: Detects ENODEV/EIO/ENXIO errors indicating device loss
+- `LoopExitReason` enum: Distinguishes signal, disconnect, and fatal error exits
+- `DeviceSetup` struct: Bundles physical and virtual device together
+
+**Event Loop (`main.rs`, `run_event_loop()`):**
 - Uses `nix::poll()` for non-blocking event reading with signal handling
 - Maintains per-slot state:
   - `slot_blocked`: HashMap tracking which slots are blocked (started in exclusion zone)
@@ -80,8 +92,9 @@ All code lives in `src/main.rs` (~740 lines). This was deliberately vibe-coded f
 - Blocks only MT-specific events (ABS_MT_POSITION_X/Y, ABS_MT_TOUCH_MAJOR/MINOR, ABS_MT_PRESSURE)
 - **Critical:** Never blocks ABS_X/ABS_Y (overall pointer position) or slot/tracking_id events
 - Touch blocking logic: When first complete position (X,Y) arrives for a slot, checks if it's in any polygon. If yes, marks slot as blocked permanently until touch ends.
+- Returns `LoopExitReason` so `main()` can decide whether to reconnect or shut down
 
-**Virtual Device Creation (lines 338-366):**
+**Virtual Device Creation (inside `setup_device()`):**
 - Clones all capabilities from physical device (keys, axes, properties)
 - Properties are critical - libinput needs INPUT_PROP_POINTER to recognize it as a touchpad
 - Uses evdev's VirtualDevice/uinput API
@@ -117,6 +130,8 @@ Touch lifecycle per slot:
 
 **Non-blocking I/O with polling:** Device is set to non-blocking mode and poll() is used to wait for events with a timeout. This allows checking the `running` atomic bool periodically for graceful shutdown.
 
+**Device reconnection:** If the device disconnects (ENODEV/EIO/ENXIO), the main loop retries `setup_device()` every second until the device reappears or a shutdown signal is received. Polygons are reused across reconnections (assumes same device dimensions).
+
 **Release profile optimization:** Cargo.toml uses `opt-level = "z"`, LTO, and stripping to produce a small (~300KB) binary.
 
 ## Configuration
@@ -135,11 +150,11 @@ For systemd service, edit `/etc/systemd/system/unpalm.service` and modify the `E
 ## Code Style Notes
 
 This is pragmatic, "vibe-coded" Rust:
-- Single file for simplicity
+- Two files: main logic + polygon module
 - No fancy abstractions or trait hierarchies
 - Straightforward imperative code
 - Comments explain "why" not "what"
-- Tests focus on core algorithms (polygon math, parsing)
+- Tests focus on core algorithms (polygon math, parsing, wildcard matching)
 - Error handling via Result types, but not exhaustive edge case coverage
 
 The author explicitly states this was built fast to solve an immediate problem (ASUS Zenbook Duo keyboard palm rejection in detached mode) and will be cleaned up later.
