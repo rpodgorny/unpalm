@@ -1,0 +1,11 @@
+[Unit]
+Description=Unpalm - Palm Rejection Filter
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/unpalm
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

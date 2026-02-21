@@ -35,7 +35,38 @@ Check that it finds your touchpad and creates the filtered device. Try touching 
 
 Press Ctrl+C to stop.
 
-### 2. Install as a system service
+### 2. Install as a user service (recommended)
+
+Since unpalm doesn't need root (just `input` group membership), a systemd user service is the simplest setup:
+
+```bash
+# Copy the binary
+sudo cp target/release/unpalm /usr/local/bin/
+
+# Install the user service
+mkdir -p ~/.config/systemd/user/
+cp unpalm.user.service ~/.config/systemd/user/unpalm.service
+
+# Enable and start the service
+systemctl --user daemon-reload
+systemctl --user enable unpalm.service
+systemctl --user start unpalm.service
+
+# Check status
+systemctl --user status unpalm.service
+
+# View logs
+journalctl --user -u unpalm.service -f
+```
+
+If you need the service to run without an active login session (e.g., on a headless machine):
+```bash
+loginctl enable-linger $USER
+```
+
+### Alternative: system service
+
+If you need the service to run as root (e.g., your system lacks the uinput ACL rule for the `input` group):
 
 ```bash
 # Copy the binary
@@ -64,8 +95,14 @@ libinput list-devices | grep "Filtered Touchpad"
 
 ## Customizing Exclusion Zones
 
-You can customize margins and add polygon zones using CLI arguments. Edit the systemd service file to add your preferences:
+You can customize margins and add polygon zones using CLI arguments. Edit the service file to add your preferences:
 
+**User service:**
+```bash
+nano ~/.config/systemd/user/unpalm.service
+```
+
+**System service:**
 ```bash
 sudo nano /etc/systemd/system/unpalm.service
 ```
@@ -84,6 +121,14 @@ ExecStart=/usr/local/bin/unpalm -n "*Synaptics*" --margin-left 25
 ```
 
 After editing, reload and restart the service:
+
+**User service:**
+```bash
+systemctl --user daemon-reload
+systemctl --user restart unpalm.service
+```
+
+**System service:**
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl restart unpalm.service
@@ -105,10 +150,12 @@ unpalm -n "*YourTouchpadName*"
 unpalm -f /dev/input/eventX
 ```
 
-**Permission denied**: unpalm needs access to `/dev/input/event*` and `/dev/uinput`. Add your user to the `input` group: `sudo usermod -aG input $USER` (then log out and back in). Alternatively, run with `sudo`. The systemd service runs as root automatically.
+**Permission denied**: unpalm needs access to `/dev/input/event*` and `/dev/uinput`. Add your user to the `input` group: `sudo usermod -aG input $USER` (then log out and back in). Alternatively, run with `sudo` or use the system service.
 
 **Service fails to start**:
-- Check logs: `journalctl -u unpalm.service -n 50`
+- Check logs:
+  - User service: `journalctl --user -u unpalm.service -n 50`
+  - System service: `journalctl -u unpalm.service -n 50`
 - Verify the touchpad device exists: `ls -l /dev/input/by-path/*event*`
 - For external/Bluetooth touchpads, ensure the device is connected when the service starts
 - You may need to add a delay in the service file: `ExecStartPre=/bin/sleep 2`

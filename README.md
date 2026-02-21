@@ -38,7 +38,7 @@ unpalm solves these problems by working at the evdev level, making it compatible
 - **Smart per-touch tracking** - Only blocks touches that start in exclusion zones, not those that move into them
 - **Hardware independent** - Works with any touchpad via evdev, no driver-specific dependencies
 - **Lightweight** - Single ~300KB binary with no runtime dependencies
-- **Systemd integration** - Run as a system service for automatic palm rejection on boot
+- **Systemd integration** - Run as a user or system service for automatic palm rejection on boot
 
 ## Comparison with Alternatives
 
@@ -205,7 +205,7 @@ unpalm -f /dev/input/event5
 
 ## Service Installation
 
-For automatic palm rejection on boot, install as a systemd service. See [INSTALL.md](INSTALL.md) for detailed instructions.
+For automatic palm rejection on boot, install as a systemd user service (recommended) or system service. See [INSTALL.md](INSTALL.md) for detailed instructions.
 
 ## How It Works
 

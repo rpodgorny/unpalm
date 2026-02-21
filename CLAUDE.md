@@ -20,9 +20,9 @@ unpalm is a Linux palm rejection filter for touchpads written in Rust. It works 
 cargo build --release
 ```
 
-**Run (requires root for device access):**
+**Run (requires `input` group membership, or root):**
 ```bash
-sudo ./target/release/unpalm
+./target/release/unpalm
 ```
 
 **Run tests:**
@@ -41,7 +41,17 @@ cargo check
 cargo clippy
 ```
 
-**Install as systemd service:**
+**Install as systemd user service (recommended):**
+```bash
+sudo cp target/release/unpalm /usr/local/bin/
+mkdir -p ~/.config/systemd/user/
+cp unpalm.user.service ~/.config/systemd/user/unpalm.service
+systemctl --user daemon-reload
+systemctl --user enable unpalm.service
+systemctl --user start unpalm.service
+```
+
+**Install as systemd system service (alternative, runs as root):**
 ```bash
 sudo cp target/release/unpalm /usr/local/bin/
 sudo cp unpalm.service /etc/systemd/system/
@@ -145,7 +155,7 @@ All configuration is via CLI arguments (no config file):
   - Percentages make configurations portable across different touchpad sizes
 - Device selection: `-n` for name pattern with wildcards, `-f` for explicit path
 
-For systemd service, edit `/etc/systemd/system/unpalm.service` and modify the `ExecStart` line.
+For systemd user service, edit `~/.config/systemd/user/unpalm.service` and modify the `ExecStart` line. For the system service, edit `/etc/systemd/system/unpalm.service`.
 
 ## Code Style Notes
 
