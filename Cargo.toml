@@ -6,6 +6,8 @@ description = "Linux palm rejection filter for touchpads"
 license = "GPL-3.0"
 repository = "https://github.com/rpodgorny/unpalm"
 rust-version = "1.78"
+keywords = ["touchpad", "palm-rejection", "evdev", "linux", "input"]
+categories = ["command-line-utilities", "os::linux-apis"]
 
 [dependencies]
 evdev = "0.13"

@@ -1,5 +1,9 @@
 # unpalm
 
+[![CI](https://github.com/rpodgorny/unpalm/actions/workflows/ci.yml/badge.svg)](https://github.com/rpodgorny/unpalm/actions/workflows/ci.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![crates.io](https://img.shields.io/crates/v/unpalm.svg)](https://crates.io/crates/unpalm)
+
 A Linux palm rejection filter for touchpads, written in Rust.
 
 ## Problem
