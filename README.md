@@ -3,6 +3,7 @@
 [![CI](https://github.com/rpodgorny/unpalm/actions/workflows/ci.yml/badge.svg)](https://github.com/rpodgorny/unpalm/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/unpalm.svg)](https://crates.io/crates/unpalm)
+[![AUR](https://img.shields.io/aur/version/unpalm.svg)](https://aur.archlinux.org/packages/unpalm)
 
 A Linux palm rejection filter for touchpads, written in Rust.
 
@@ -60,21 +61,38 @@ unpalm solves these problems by working at the evdev level, making it compatible
 ## Requirements
 
 - Linux with evdev support
-- Rust toolchain (for building)
-- Root privileges (to grab input devices)
+- Access to input devices (`input` group membership, or root)
+
+**Note:** `sudo` is not generally needed to run unpalm. On most systems, the udev ACL rule (`80-uinput.rules`) grants the `input` group access to `/dev/uinput`. On systems where this rule is not present, `sudo` may still be required.
+
+## Installation
+
+**From crates.io:**
+```bash
+cargo install unpalm
+```
+
+**Arch Linux (AUR):**
+```bash
+yay -S unpalm
+# or
+paru -S unpalm
+```
+
+**From source:**
+```bash
+git clone https://github.com/rpodgorny/unpalm.git
+cd unpalm
+cargo build --release
+sudo cp target/release/unpalm /usr/local/bin/
+```
 
 ## Quick Start
-
-Build the project:
-
-```bash
-cargo build --release
-```
 
 Run with default settings (auto-detect touchpad, built-in exclusion zones):
 
 ```bash
-sudo ./target/release/unpalm
+unpalm
 ```
 
 The tool will auto-detect your touchpad and create a filtered virtual device.
@@ -124,17 +142,17 @@ When any `--margin-*` or `--polygon` argument is given, **all defaults are repla
 
 **Auto-detect touchpad with default exclusion zones:**
 ```bash
-sudo ./target/release/unpalm
+unpalm
 ```
 
 **Specify touchpad by name pattern:**
 ```bash
-sudo ./target/release/unpalm -n "*Synaptics*"
+unpalm -n "*Synaptics*"
 ```
 
 **Custom rectangular margins (30% left/right, 15% top, 10% bottom):**
 ```bash
-sudo ./target/release/unpalm --margin-left 30 --margin-right 30 --margin-top 15 --margin-bottom 10
+unpalm --margin-left 30 --margin-right 30 --margin-top 15 --margin-bottom 10
 ```
 
 ```
@@ -154,13 +172,13 @@ left 30%                         right 30%
 **Only a custom triangular exclusion zone (no defaults):**
 ```bash
 # Triangle at top-left corner (coordinates are percentages: 0-100)
-sudo ./target/release/unpalm --polygon "0,0 20,0 10,30"
+unpalm --polygon "0,0 20,0 10,30"
 ```
 
 **Multiple polygon zones:**
 ```bash
 # Two triangles at top corners (all coordinates are percentages 0-100)
-sudo ./target/release/unpalm \
+unpalm \
   --polygon "0,0 15,0 0,25" \
   --polygon "85,0 100,0 100,25"
 ```
@@ -182,7 +200,7 @@ triangle                          triangle
 
 **Specify exact device file:**
 ```bash
-sudo ./target/release/unpalm -f /dev/input/event5
+unpalm -f /dev/input/event5
 ```
 
 ## Service Installation
@@ -214,9 +232,9 @@ For transparency and completeness, here are related projects and approaches:
 
 **Why unpalm exists:** None of the Linux solutions above offer configurable, polygon-based exclusion zones that work on both X11 and Wayland without hardware dependencies.
 
-## Development Note
+## Background
 
-This project was vibe-coded to quickly solve a specific problem: the ASUS Zenbook Duo keyboard's palm rejection doesn't work in detached mode, making it nearly unusable. I needed a solution immediately, so this was built fast and pragmatically. It works well, but the code will be cleaned up later. Don't expect enterprise-grade architecture or exhaustive edge case handling right now.
+This project was built to solve a specific, immediate problem: the ASUS Zenbook Duo keyboard's palm rejection doesn't work in detached mode, making it nearly unusable. It was developed quickly and pragmatically - function over form. It works well in practice, but the codebase prioritizes directness over elaborate abstraction. Contributions and improvements are welcome.
 
 ## Related Files
 

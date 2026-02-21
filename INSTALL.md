@@ -1,10 +1,34 @@
 # Installation Guide
 
-## Quick Start
+## Install Methods
 
-### 1. Test the filter manually (requires root)
+**From crates.io:**
 ```bash
-sudo ./target/release/unpalm
+cargo install unpalm
+```
+
+**Arch Linux (AUR):**
+```bash
+yay -S unpalm
+# or
+paru -S unpalm
+```
+
+**From source:**
+```bash
+git clone https://github.com/rpodgorny/unpalm.git
+cd unpalm
+cargo build --release
+sudo cp target/release/unpalm /usr/local/bin/
+```
+
+## Setup
+
+### 1. Test the filter manually
+```bash
+unpalm
+# or, if built from source without installing:
+./target/release/unpalm
 ```
 
 Check that it finds your touchpad and creates the filtered device. Try touching the edges - those touches should be blocked.
@@ -76,12 +100,12 @@ libinput list-devices | grep -i touchpad
 
 If multiple touchpads are detected, specify the one you want using the `-n` or `-f` option in the service file:
 ```bash
-sudo unpalm -n "*YourTouchpadName*"
+unpalm -n "*YourTouchpadName*"
 # or
-sudo unpalm -f /dev/input/eventX
+unpalm -f /dev/input/eventX
 ```
 
-**Permission denied**: The filter needs root access to grab input devices. The systemd service runs as root automatically. If running manually, use `sudo`.
+**Permission denied**: unpalm needs access to `/dev/input/event*` and `/dev/uinput`. Add your user to the `input` group: `sudo usermod -aG input $USER` (then log out and back in). Alternatively, run with `sudo`. The systemd service runs as root automatically.
 
 **Service fails to start**:
 - Check logs: `journalctl -u unpalm.service -n 50`
