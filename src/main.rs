@@ -63,6 +63,10 @@ struct Cli {
     /// Can be specified multiple times for multiple polygons
     #[arg(long, value_name = "POINTS")]
     polygon: Vec<String>,
+
+    /// Enable debug output (individual touch events, etc.)
+    #[arg(long)]
+    debug: bool,
 }
 
 /// Check if a device is a touchpad by looking for:
@@ -139,9 +143,9 @@ fn find_device(
     if let Some(path) = device_file {
         match evdev::Device::open(path) {
             Ok(device) => {
-                println!("Opened device file: {}", path.display());
+                log::info!("Opened device file: {}", path.display());
                 if let Some(name) = device.name() {
-                    println!("Device name: {name}");
+                    log::info!("Device name: {name}");
                 }
                 return Ok(device);
             }
@@ -171,14 +175,16 @@ fn find_device(
             1 => {
                 let (path, device) = matches.into_iter().next().unwrap();
                 let dev_name = device.name().unwrap_or("Unknown");
-                println!("Found device: {} - {dev_name}", path.display());
+                log::info!("Found device: {} - {dev_name}", path.display());
                 return Ok(device);
             }
             n => {
-                eprintln!("Found {n} devices matching pattern '{name}', please be more specific:");
+                log::error!(
+                    "Found {n} devices matching pattern '{name}', please be more specific:"
+                );
                 for (path, device) in &matches {
                     let dev_name = device.name().unwrap_or("Unknown");
-                    eprintln!("  {} - {dev_name}", path.display());
+                    log::error!("  {} - {dev_name}", path.display());
                 }
                 return Err(format!("Multiple devices found matching pattern: {name}"));
             }
@@ -193,14 +199,14 @@ fn find_device(
         1 => {
             let (path, device) = touchpads.into_iter().next().unwrap();
             let name = device.name().unwrap_or("Unknown");
-            println!("Auto-detected touchpad: {} - {name}", path.display());
+            log::info!("Auto-detected touchpad: {} - {name}", path.display());
             Ok(device)
         }
         n => {
-            eprintln!("Found {n} touchpads, please specify one with -n or -f:");
+            log::error!("Found {n} touchpads, please specify one with -n or -f:");
             for (path, device) in &touchpads {
                 let name = device.name().unwrap_or("Unknown");
-                eprintln!("  {} - {name}", path.display());
+                log::error!("  {} - {name}", path.display());
             }
             Err("Multiple touchpads found".to_string())
         }
@@ -239,7 +245,7 @@ fn setup_device(
     let x_max = x_info.maximum();
     let y_max = y_info.maximum();
 
-    println!("Detected touchpad dimensions: X_MAX={x_max}, Y_MAX={y_max}");
+    log::info!("Detected touchpad dimensions: X_MAX={x_max}, Y_MAX={y_max}");
 
     // Create virtual device with same capabilities
     let mut builder = VirtualDevice::builder()?
@@ -262,14 +268,14 @@ fn setup_device(
 
     let mut virtual_device = builder.build()?;
 
-    println!(
+    log::info!(
         "Created virtual device: {:?}",
         virtual_device.enumerate_dev_nodes_blocking()?.next()
     );
 
     // Grab the original device
     device.grab()?;
-    println!("Grabbed original device");
+    log::info!("Grabbed original device");
 
     // Set device to non-blocking mode to allow polling
     device.set_nonblocking(true)?;
@@ -307,11 +313,11 @@ fn reconnect_with_retry(
         // Try to set up the device
         match setup_device(device_name, device_file) {
             Ok((setup, _, _)) => {
-                println!("Successfully reconnected to device");
+                log::info!("Successfully reconnected to device");
                 return Ok(setup);
             }
             Err(e) => {
-                eprintln!("Reconnection attempt failed: {}", e);
+                log::warn!("Reconnection attempt failed: {}", e);
             }
         }
     }
@@ -331,7 +337,7 @@ fn run_event_loop(
     let mut slot_positions: HashMap<i32, (Option<i32>, Option<i32>)> = HashMap::new();
     let mut current_slot: i32 = 0;
 
-    println!("Starting event loop...");
+    log::info!("Starting event loop...");
 
     while running.load(Ordering::SeqCst) {
         // Poll with 100ms timeout to allow checking running flag
@@ -361,7 +367,7 @@ fn run_event_loop(
                     continue;
                 }
                 if is_device_disconnected(&e) {
-                    eprintln!("Device disconnected: {}", e);
+                    log::error!("Device disconnected: {}", e);
                     return LoopExitReason::DeviceDisconnected;
                 }
                 return LoopExitReason::FatalError(format!("Error reading events: {}", e));
@@ -401,7 +407,9 @@ fn run_event_loop(
                             if let Some(y) = old_y {
                                 if is_in_any_polygon(x, y, polygons) {
                                     slot_blocked.insert(current_slot, true);
-                                    println!("Slot {current_slot}: blocked (started at {x}, {y})");
+                                    log::debug!(
+                                        "Slot {current_slot}: blocked (started at {x}, {y})"
+                                    );
                                 }
                             }
                         }
@@ -416,7 +424,9 @@ fn run_event_loop(
                             if let Some(x) = old_x {
                                 if is_in_any_polygon(x, y, polygons) {
                                     slot_blocked.insert(current_slot, true);
-                                    println!("Slot {current_slot}: blocked (started at {x}, {y})");
+                                    log::debug!(
+                                        "Slot {current_slot}: blocked (started at {x}, {y})"
+                                    );
                                 }
                             }
                         }
@@ -463,6 +473,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command-line arguments
     let cli = Cli::parse();
 
+    // Initialize logger: --debug enables debug level, otherwise info level
+    // RUST_LOG env var can override for power users
+    env_logger::Builder::new()
+        .filter_level(if cli.debug {
+            log::LevelFilter::Debug
+        } else {
+            log::LevelFilter::Info
+        })
+        .format_timestamp(None)
+        .format_target(false)
+        .init();
+
     // Set up signal handling for clean shutdown (do this once, before device setup)
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -493,28 +515,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if pct > 0.0 {
                 let margin_px = (x_max as f32 * pct / 100.0) as i32;
                 polygons.push(Polygon::rectangle(0, 0, margin_px, y_max));
-                println!("Left margin: {pct}% ({margin_px}px) [rectangle]");
+                log::info!("Left margin: {pct}% ({margin_px}px) [rectangle]");
             }
         }
         if let Some(pct) = cli.margin_right {
             if pct > 0.0 {
                 let margin_px = (x_max as f32 * pct / 100.0) as i32;
                 polygons.push(Polygon::rectangle(x_max - margin_px, 0, x_max, y_max));
-                println!("Right margin: {pct}% ({margin_px}px) [rectangle]");
+                log::info!("Right margin: {pct}% ({margin_px}px) [rectangle]");
             }
         }
         if let Some(pct) = cli.margin_top {
             if pct > 0.0 {
                 let margin_px = (y_max as f32 * pct / 100.0) as i32;
                 polygons.push(Polygon::rectangle(0, 0, x_max, margin_px));
-                println!("Top margin: {pct}% ({margin_px}px) [rectangle]");
+                log::info!("Top margin: {pct}% ({margin_px}px) [rectangle]");
             }
         }
         if let Some(pct) = cli.margin_bottom {
             if pct > 0.0 {
                 let margin_px = (y_max as f32 * pct / 100.0) as i32;
                 polygons.push(Polygon::rectangle(0, y_max - margin_px, x_max, y_max));
-                println!("Bottom margin: {pct}% ({margin_px}px) [rectangle]");
+                log::info!("Bottom margin: {pct}% ({margin_px}px) [rectangle]");
             }
         }
 
@@ -525,10 +547,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })?;
             let polygon = Polygon::from_percentages(&points, x_max, y_max)
                 .map_err(|e| format!("Failed to create polygon {}: {}", i + 1, e))?;
-            println!("Polygon {}: {} vertices", i + 1, polygon.vertices.len());
+            log::info!("Polygon {}: {} vertices", i + 1, polygon.vertices.len());
 
             for warning in polygon.validate() {
-                eprintln!("Warning: Polygon {}: {}", i + 1, warning);
+                log::warn!("Polygon {}: {}", i + 1, warning);
             }
 
             polygons.push(polygon);
@@ -538,26 +560,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Top 20% rectangle
         let top_px = (y_max as f32 * 20.0 / 100.0) as i32;
         polygons.push(Polygon::rectangle(0, 0, x_max, top_px));
-        println!("Default: top 20% rectangle ({top_px}px)");
+        log::info!("Default: top 20% rectangle ({top_px}px)");
 
         // Left 30% triangle: (0,0) -> (left_px,0) -> (0,y_max)
         let left_px = (x_max as f32 * 30.0 / 100.0) as i32;
         polygons.push(Polygon {
             vertices: vec![(0, 0), (left_px, 0), (0, y_max)],
         });
-        println!("Default: left 30% triangle ({left_px}px)");
+        log::info!("Default: left 30% triangle ({left_px}px)");
 
         // Right 30% triangle: (x_max-right_px,0) -> (x_max,0) -> (x_max,y_max)
         let right_px = (x_max as f32 * 30.0 / 100.0) as i32;
         polygons.push(Polygon {
             vertices: vec![(x_max - right_px, 0), (x_max, 0), (x_max, y_max)],
         });
-        println!("Default: right 30% triangle ({right_px}px)");
+        log::info!("Default: right 30% triangle ({right_px}px)");
 
-        println!("Using default exclusion zones");
+        log::info!("Using default exclusion zones");
     }
 
-    println!("Total exclusion zones: {} polygon(s)", polygons.len());
+    log::info!("Total exclusion zones: {} polygon(s)", polygons.len());
 
     // Main loop with reconnection support
     loop {
@@ -568,11 +590,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &running,
         ) {
             LoopExitReason::SignalReceived => {
-                println!("\nShutting down...");
+                log::info!("Shutting down...");
                 break;
             }
             LoopExitReason::DeviceDisconnected => {
-                eprintln!("Device disconnected, attempting to reconnect...");
+                log::info!("Device disconnected, attempting to reconnect...");
                 // Drop the old setup to release the grab and close file descriptors
                 drop(setup);
                 // Try to reconnect, retrying every second
@@ -587,7 +609,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Err(e) => {
                         // This only happens if shutdown was requested during reconnection
-                        println!("\nShutting down: {}", e);
+                        log::info!("Shutting down: {}", e);
                         break;
                     }
                 }

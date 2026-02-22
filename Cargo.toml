@@ -16,6 +16,8 @@ evdev = "0.13"
 signal-hook = "0.4"
 nix = { version = "0.29", features = ["poll"] }
 clap = { version = "4.5", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
 
 [profile.release]
 opt-level = "z"
