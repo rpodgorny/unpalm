@@ -625,6 +625,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Total exclusion zones: {} polygon(s)", polygons.len());
     log::info!(
+        "Tap/click blocking in exclusion zones: {}",
+        if cli.block_taps {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    log::info!(
         "Exclusion zone map:\n{}",
         polygon::visualize_zones(&polygons, x_max, y_max)
     );
