@@ -1,7 +1,7 @@
 mod polygon;
 
 use clap::Parser;
-use evdev::{uinput::VirtualDevice, AbsoluteAxisCode};
+use evdev::{uinput::VirtualDevice, AbsoluteAxisCode, KeyCode};
 use nix::poll::{poll, PollFd, PollFlags};
 use polygon::{is_in_any_polygon, parse_polygon_string, Polygon};
 use signal_hook::{consts::SIGINT, consts::SIGTERM, iterator::Signals};
@@ -63,6 +63,10 @@ struct Cli {
     /// Can be specified multiple times for multiple polygons
     #[arg(long, value_name = "POINTS")]
     polygon: Vec<String>,
+
+    /// Also block taps and clicks in exclusion zones (default: only drags are blocked)
+    #[arg(long)]
+    block_taps: bool,
 
     /// Enable debug output (individual touch events, etc.)
     #[arg(long)]
@@ -323,12 +327,18 @@ fn reconnect_with_retry(
     }
 }
 
+/// Returns true if there are active touch slots and all of them are blocked
+fn all_slots_blocked(slot_blocked: &HashMap<i32, bool>) -> bool {
+    !slot_blocked.is_empty() && slot_blocked.values().all(|&blocked| blocked)
+}
+
 /// Run the main event loop
 fn run_event_loop(
     device: &mut evdev::Device,
     virtual_device: &mut VirtualDevice,
     polygons: &[Polygon],
     running: &Arc<AtomicBool>,
+    block_taps: bool,
 ) -> LoopExitReason {
     // Track multitouch slot state
     // slot_blocked[slot] = true if touch started in edge zone
@@ -375,6 +385,7 @@ fn run_event_loop(
         };
 
         let mut events_to_forward = Vec::new();
+        let mut slots_to_remove = Vec::new();
 
         for event in events {
             let mut forward = true;
@@ -394,8 +405,9 @@ fn run_event_loop(
                         slot_blocked.insert(current_slot, false);
                     } else {
                         // Touch ended (tracking_id == -1)
-                        slot_blocked.remove(&current_slot);
-                        slot_positions.remove(&current_slot);
+                        // Defer removal until after processing all events in this batch,
+                        // so that global event blocking decisions see the correct slot state
+                        slots_to_remove.push(current_slot);
                     }
                 }
                 evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_POSITION_X, x) => {
@@ -436,7 +448,6 @@ fn run_event_loop(
             }
 
             // Block only slot-specific MT events for blocked slots
-            // DO NOT block ABS_X/ABS_Y as they represent the overall pointer position
             if slot_blocked.get(&current_slot).copied().unwrap_or(false) {
                 if let evdev::EventSummary::AbsoluteAxis(
                     _,
@@ -452,10 +463,43 @@ fn run_event_loop(
                 }
             }
 
+            // When --block-taps is enabled and all active slots are blocked,
+            // also block global touch/position events to prevent taps
+            if block_taps && all_slots_blocked(&slot_blocked) {
+                match event.destructure() {
+                    evdev::EventSummary::AbsoluteAxis(
+                        _,
+                        AbsoluteAxisCode::ABS_X | AbsoluteAxisCode::ABS_Y,
+                        _,
+                    ) => {
+                        forward = false;
+                    }
+                    evdev::EventSummary::Key(
+                        _,
+                        KeyCode::BTN_TOUCH
+                        | KeyCode::BTN_TOOL_FINGER
+                        | KeyCode::BTN_TOOL_DOUBLETAP
+                        | KeyCode::BTN_TOOL_TRIPLETAP
+                        | KeyCode::BTN_TOOL_QUADTAP
+                        | KeyCode::BTN_TOOL_QUINTTAP,
+                        _,
+                    ) => {
+                        forward = false;
+                    }
+                    _ => {}
+                }
+            }
+
             // Collect events to forward
             if forward {
                 events_to_forward.push(event);
             }
+        }
+
+        // Now perform deferred slot cleanup
+        for slot in slots_to_remove {
+            slot_blocked.remove(&slot);
+            slot_positions.remove(&slot);
         }
 
         // Emit all forwarded events as a batch
@@ -588,6 +632,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut setup.virtual_device,
             &polygons,
             &running,
+            cli.block_taps,
         ) {
             LoopExitReason::SignalReceived => {
                 log::info!("Shutting down...");
@@ -820,6 +865,57 @@ mod tests {
             "85,0 100,0 100,25",
         ]);
         assert_eq!(cli.polygon.len(), 2);
+    }
+
+    #[test]
+    fn test_cli_block_taps_default_off() {
+        let cli = Cli::parse_from(["unpalm"]);
+        assert!(!cli.block_taps);
+    }
+
+    #[test]
+    fn test_cli_block_taps_enabled() {
+        let cli = Cli::parse_from(["unpalm", "--block-taps"]);
+        assert!(cli.block_taps);
+    }
+
+    // Tests for all_slots_blocked
+
+    #[test]
+    fn test_all_slots_blocked_empty() {
+        let map: HashMap<i32, bool> = HashMap::new();
+        assert!(!all_slots_blocked(&map));
+    }
+
+    #[test]
+    fn test_all_slots_blocked_single_blocked() {
+        let mut map = HashMap::new();
+        map.insert(0, true);
+        assert!(all_slots_blocked(&map));
+    }
+
+    #[test]
+    fn test_all_slots_blocked_single_not_blocked() {
+        let mut map = HashMap::new();
+        map.insert(0, false);
+        assert!(!all_slots_blocked(&map));
+    }
+
+    #[test]
+    fn test_all_slots_blocked_mixed() {
+        let mut map = HashMap::new();
+        map.insert(0, true);
+        map.insert(1, false);
+        assert!(!all_slots_blocked(&map));
+    }
+
+    #[test]
+    fn test_all_slots_blocked_all_blocked() {
+        let mut map = HashMap::new();
+        map.insert(0, true);
+        map.insert(1, true);
+        map.insert(2, true);
+        assert!(all_slots_blocked(&map));
     }
 
     #[test]
