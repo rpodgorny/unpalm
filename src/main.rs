@@ -624,6 +624,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     log::info!("Total exclusion zones: {} polygon(s)", polygons.len());
+    log::info!(
+        "Exclusion zone map:\n{}",
+        polygon::visualize_zones(&polygons, x_max, y_max)
+    );
 
     // Main loop with reconnection support
     loop {

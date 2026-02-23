@@ -217,6 +217,35 @@ pub fn is_in_any_polygon(x: i32, y: i32, polygons: &[Polygon]) -> bool {
     polygons.iter().any(|polygon| polygon.contains(x, y))
 }
 
+/// Render an ASCII visualization of the touchpad with exclusion zones marked
+pub fn visualize_zones(polygons: &[Polygon], x_max: i32, y_max: i32) -> String {
+    const COLS: usize = 60;
+    const ROWS: usize = 20;
+
+    let mut lines = Vec::with_capacity(ROWS + 2);
+    let border_h = format!("+{}+", "-".repeat(COLS));
+    lines.push(border_h.clone());
+
+    for row in 0..ROWS {
+        let mut line = String::with_capacity(COLS + 2);
+        line.push('|');
+        for col in 0..COLS {
+            let x = ((col as f64 + 0.5) / COLS as f64 * x_max as f64) as i32;
+            let y = ((row as f64 + 0.5) / ROWS as f64 * y_max as f64) as i32;
+            if is_in_any_polygon(x, y, polygons) {
+                line.push('#');
+            } else {
+                line.push('.');
+            }
+        }
+        line.push('|');
+        lines.push(line);
+    }
+
+    lines.push(border_h);
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -573,5 +602,57 @@ mod tests {
         assert!(warnings.len() >= 2);
         assert!(warnings.iter().any(|w| w.contains("Duplicate")));
         assert!(warnings.iter().any(|w| w.contains("near-zero area")));
+    }
+
+    // Tests for visualize_zones
+
+    #[test]
+    fn test_visualize_zones_no_polygons() {
+        let output = visualize_zones(&[], 1000, 1000);
+        let lines: Vec<&str> = output.lines().collect();
+        // 20 rows + 2 border lines
+        assert_eq!(lines.len(), 22);
+        // All interior cells should be dots (no blocked zones)
+        for line in &lines[1..21] {
+            assert!(line.starts_with('|'));
+            assert!(line.ends_with('|'));
+            let interior = &line[1..line.len() - 1];
+            assert!(
+                interior.chars().all(|c| c == '.'),
+                "Expected all dots, got: {interior}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_visualize_zones_full_coverage() {
+        // A polygon covering the entire touchpad
+        let polygons = vec![Polygon::rectangle(0, 0, 1000, 1000)];
+        let output = visualize_zones(&polygons, 1000, 1000);
+        let lines: Vec<&str> = output.lines().collect();
+        for line in &lines[1..21] {
+            let interior = &line[1..line.len() - 1];
+            assert!(
+                interior.chars().all(|c| c == '#'),
+                "Expected all blocked, got: {interior}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_visualize_zones_left_margin() {
+        // Left 20% rectangle on a 1000x1000 touchpad
+        let polygons = vec![Polygon::rectangle(0, 0, 200, 1000)];
+        let output = visualize_zones(&polygons, 1000, 1000);
+        let lines: Vec<&str> = output.lines().collect();
+        // Check a middle row: first ~12 chars (20% of 60) should be '#', rest '.'
+        let mid_line = lines[10]; // row index 10 (0-based interior row 9)
+        let interior = &mid_line[1..mid_line.len() - 1];
+        let chars: Vec<char> = interior.chars().collect();
+        // 20% of 60 cols = 12 cols blocked
+        assert!(chars[0] == '#', "First col should be blocked");
+        assert!(chars[11] == '#', "Col 11 should be blocked");
+        assert!(chars[15] == '.', "Col 15 should be allowed");
+        assert!(chars[59] == '.', "Last col should be allowed");
     }
 }
