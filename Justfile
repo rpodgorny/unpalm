@@ -15,3 +15,6 @@ fmt:
 
 audit:
   cargo audit
+
+publish:
+  cargo publish
