@@ -23,9 +23,9 @@ Some users resort to applying duct tape and aluminum foil to physically block po
 
 Existing solutions have significant limitations:
 
-- **libinput's palm detection** requires hardware support and isn't configurable - you either get the automatic detection or nothing
+- **libinput's palm detection** is automatic, with no documented way to configure its zones, and several of its methods depend on hardware capabilities
+- **libinput Lua plugins** (1.30+) can filter touches before libinput sees them, but you write the zone logic yourself, per device, and they only load if your compositor allows plugins
 - **xinput/Synaptics tools** are X11-only and don't work on Wayland, which is becoming the standard
-- **Windows has Touchpad Blocker, macOS has BetterTouchTool** - but Linux lacked a comparable cross-platform solution
 - **Driver-specific settings** (Synaptics, ELAN) vary by hardware and aren't portable across machines
 
 unpalm solves these problems by working at the evdev level, making it compatible with any display server, any compositor, and any touchpad hardware.
@@ -33,8 +33,8 @@ unpalm solves these problems by working at the evdev level, making it compatible
 ## Features
 
 - **Works everywhere** - Compatible with X11, Wayland, and any compositor (sway, Hyprland, GNOME, KDE, etc.)
-- **Truly configurable** - Unlike libinput's automatic-only approach, customize margins and exclusion zones to your needs
-- **Custom polygon zones** - Unique capability to define arbitrary shapes (perfect for corner triangles or complex layouts)
+- **Truly configurable** - Customize margins and exclusion zones with CLI arguments, no plugin code needed
+- **Custom polygon zones** - Define arbitrary shapes (perfect for corner triangles or complex layouts)
 - **Smart per-touch tracking** - Only blocks touches that start in exclusion zones, not those that move into them
 - **Hardware independent** - Works with any touchpad via evdev, no driver-specific dependencies
 - **Lightweight** - Single ~760KB binary with no runtime dependencies
@@ -42,20 +42,22 @@ unpalm solves these problems by working at the evdev level, making it compatible
 
 ## Comparison with Alternatives
 
-| Feature | unpalm | libinput palm detection | xinput/Synaptics | Touchpad Blocker (Windows) | BetterTouchTool (macOS) |
-|---------|----------------|------------------------|------------------|----------------------------|------------------------|
-| **Wayland support** | ✅ Yes | ✅ Yes | ❌ No (X11 only) | N/A | N/A |
-| **X11 support** | ✅ Yes | ✅ Yes | ✅ Yes | N/A | N/A |
-| **Configurable zones** | ✅ Margins + polygons | ❌ Automatic only | ⚠️ Limited | ✅ Yes | ✅ Yes |
-| **Custom polygon zones** | ✅ Yes | ❌ No | ❌ No | ❌ No | ⚠️ Limited |
-| **Hardware independent** | ✅ Any evdev device | ⚠️ Needs HW support | ❌ Driver-specific | ✅ Yes | ✅ Yes |
-| **Per-touch tracking** | ✅ Yes | ✅ Yes | ❌ No (coord-based) | ⚠️ Varies | ⚠️ Varies |
-| **Runtime dependencies** | ❌ None | ⚠️ libinput | ⚠️ X11 + drivers | ⚠️ .NET Framework | ⚠️ macOS 10.10+ |
-| **Binary size** | ~760KB | Part of libinput | N/A | ~2MB | ~15MB |
+| Feature | unpalm | libinput palm detection | xinput/Synaptics |
+|---------|----------------|------------------------|------------------|
+| **Wayland support** | ✅ Yes | ✅ Yes | ❌ No (X11 only) |
+| **X11 support** | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Configurable zones** | ✅ Margins + polygons | ⚠️ Lua plugin only (1.30+) | ⚠️ Rectangular edges |
+| **Custom polygon zones** | ✅ Yes | ⚠️ If you script it in Lua | ❌ No |
+| **Hardware independent** | ✅ Any evdev device | ⚠️ Varies by method | ❌ Driver-specific |
+| **Per-touch tracking** | ✅ Yes | ✅ Yes | ❌ No (coord-based) |
+| **Runtime dependencies** | ❌ None | ⚠️ libinput | ⚠️ X11 + drivers |
+| **Binary size** | ~760KB | Part of libinput | N/A |
+
+*Comparison made on 2026-10-30.*
 
 **Key differentiators:**
-- unpalm is the only Linux solution that combines Wayland support, configurable polygon zones, and hardware independence
-- Unlike libinput, you have full control over exclusion zones instead of relying on automatic detection
+- unpalm is the only ready-made Linux tool we know of that combines Wayland support, configurable polygon zones, and hardware independence
+- libinput's built-in zones are fixed; changing them takes a Lua plugin written for your device and a compositor that loads plugins, while unpalm zones are plain CLI arguments and don't depend on the compositor
 - Unlike xinput-based tools, it works on modern Wayland compositors (sway, Hyprland, etc.)
 
 ## Requirements
@@ -236,15 +238,11 @@ Touches are tracked per-slot, so if you start a touch in an allowed area, it con
 
 For transparency and completeness, here are related projects and approaches:
 
-**Linux:**
-- [libinput palm detection](https://wayland.freedesktop.org/libinput/doc/latest/palm-detection.html) - Built-in automatic palm detection (requires hardware support)
+- [libinput palm detection](https://wayland.freedesktop.org/libinput/doc/latest/palm-detection.html) - Built-in automatic palm detection (some methods depend on hardware capabilities)
+- [libinput Lua plugins](https://wayland.freedesktop.org/libinput/doc/latest/lua-plugins.html) - Scriptable event filtering in libinput 1.30+, if the compositor loads plugins; [zenbook-a16-linux-touchpad](https://github.com/wrobelda/zenbook-a16-linux-touchpad) is one example with rectangular zones for GNOME on Wayland
 - [touchpadtuner](https://github.com/robertu94/touchpadtuner) - GUI for configuring xinput touchpad settings (X11 only)
 
-**Other platforms:**
-- [Touchpad Blocker](https://touchpad-blocker.com/) - Palm rejection for Windows
-- [BetterTouchTool](https://folivora.ai/) - Comprehensive macOS gesture and input customization tool
-
-**Why unpalm exists:** None of the Linux solutions above offer configurable, polygon-based exclusion zones that work on both X11 and Wayland without hardware dependencies.
+**Why unpalm exists:** None of the Linux solutions above offer ready-made, configurable, polygon-based exclusion zones that work on both X11 and Wayland without hardware dependencies.
 
 ## Background
 
