@@ -37,7 +37,7 @@ unpalm solves these problems by working at the evdev level, making it compatible
 - **Custom polygon zones** - Define arbitrary shapes (perfect for corner triangles or complex layouts)
 - **Smart per-touch tracking** - Only blocks touches that start in exclusion zones, not those that move into them
 - **Hardware independent** - Works with any touchpad via evdev, no driver-specific dependencies
-- **Lightweight** - Single ~760KB binary with no runtime dependencies
+- **Lightweight** - Single ~760KB binary with no dependencies beyond the C runtime
 - **Systemd integration** - Run as a user or system service for automatic palm rejection on boot
 
 ## Comparison with Alternatives
@@ -50,8 +50,6 @@ unpalm solves these problems by working at the evdev level, making it compatible
 | **Custom polygon zones** | ✅ Yes | ⚠️ If you script it in Lua | ❌ No |
 | **Hardware independent** | ✅ Any evdev device | ⚠️ Varies by method | ❌ Driver-specific |
 | **Per-touch tracking** | ✅ Yes | ✅ Yes | ❌ No (coord-based) |
-| **Runtime dependencies** | ❌ None | ⚠️ libinput | ⚠️ X11 + drivers |
-| **Binary size** | ~760KB | Part of libinput | N/A |
 
 *Comparison made on 2026-10-30.*
 
