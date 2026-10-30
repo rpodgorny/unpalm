@@ -525,6 +525,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             log::LevelFilter::Info
         })
+        .parse_default_env()
         .format_timestamp(None)
         .format_target(false)
         .init();
