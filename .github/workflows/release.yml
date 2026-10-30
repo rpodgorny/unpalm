@@ -52,3 +52,36 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
         run: cargo publish
+
+  publish-aur:
+    needs: release
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      # git must be there before checkout, otherwise there's no .git for "just aur"
+      - run: pacman -Syu --noconfirm git openssh just
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Publish to AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          [ -n "$AUR_SSH_PRIVATE_KEY" ] || { echo "AUR_SSH_PRIVATE_KEY is empty" >&2; exit 1; }
+          # "just aur" no-ops on an unchanged PKGBUILD, so a forgotten bump would pass silently
+          grep -qx "pkgver=${GITHUB_REF_NAME#v}" aur/PKGBUILD \
+            || { echo "aur/PKGBUILD pkgver does not match $GITHUB_REF_NAME" >&2; exit 1; }
+          # makepkg refuses to run as root
+          useradd -m builder
+          install -d -m 700 /home/builder/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/id_ed25519
+          chmod 600 /home/builder/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 aur.archlinux.org > /home/builder/.ssh/known_hosts
+          chown -R builder: /home/builder/.ssh .
+          runuser -u builder -- env HOME=/home/builder sh -c '
+            git config --global user.name "Radek Podgorny"
+            git config --global user.email radek@podgorny.cz
+            just aur
+          '
