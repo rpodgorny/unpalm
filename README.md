@@ -135,6 +135,8 @@ When any `--margin-*` or `--polygon` argument is given, **all defaults are repla
 | `--margin-top <PERCENT>` | Top margin as percentage of touchpad height (rectangle) |
 | `--margin-bottom <PERCENT>` | Bottom margin as percentage of touchpad height (rectangle) |
 | `--polygon <POINTS>` | Polygon exclusion zone (format: `"x1,y1 x2,y2 x3,y3"` where x,y are percentages 0-100) |
+| `--block-taps` | Also block taps and clicks in exclusion zones (default: only drags are blocked) |
+| `--debug` | Enable debug output (individual touch events, etc.) |
 
 **Note:** With no arguments, built-in defaults apply (30% side triangles + 20% top rectangle). When any `--margin-*` or `--polygon` is specified, all defaults are replaced. All coordinates are percentages (0-100) of the touchpad's width/height, making configurations portable across different touchpad sizes.
 
@@ -201,6 +203,18 @@ triangle                          triangle
 **Specify exact device file:**
 ```bash
 unpalm -f /dev/input/event5
+```
+
+**Also block taps and clicks in exclusion zones:**
+```bash
+unpalm --block-taps
+```
+
+By default, a touch starting in an exclusion zone can't move the pointer, but it can still register as a tap or click. With `--block-taps`, those are blocked too while all active touches are in blocked slots.
+
+**Show individual touch events for troubleshooting:**
+```bash
+unpalm --debug
 ```
 
 ## Service Installation
