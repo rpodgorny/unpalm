@@ -3,13 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    unpalm-src = {
-      url = "github:rpodgorny/unpalm";
-      flake = false;
-    };
   };
 
-  outputs = { self, nixpkgs, unpalm-src }:
+  outputs = { self, nixpkgs }:
     let
       supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
@@ -21,13 +17,12 @@
         in {
           default = pkgs.rustPlatform.buildRustPackage {
             pname = "unpalm";
-            version = "0.1.0";
+            version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
 
-            src = unpalm-src;
+            src = ./.;
 
-            # Automatically generates Cargo hash or builds using Cargo.lock in repo
             cargoLock = {
-              lockFile = "${unpalm-src}/Cargo.lock";
+              lockFile = ./Cargo.lock;
             };
 
             nativeBuildInputs = [ pkgs.pkg-config ];
@@ -43,7 +38,7 @@
         });
 
       # 2. The NixOS System Service Module
-      nixosModules.default = { config, lib, pkgs, ... }:
+      nixosModules.default = { config, lib, pkgs, utils, ... }:
         let
           cfg = config.services.unpalm;
           unpalmPkg = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
@@ -122,7 +117,7 @@
                     ++ lib.concatMap (poly: [ "--polygon" poly ]) cfg.polygons
                     ++ cfg.extraArgs;
                 in
-                  "${cfg.package}/bin/unpalm ${lib.concatStringsSep " " args}";
+                  utils.escapeSystemdExecArgs ([ "${cfg.package}/bin/unpalm" ] ++ args);
 
                 User = "unpalm";
                 Group = "unpalm";
