@@ -1,6 +1,6 @@
 [package]
 name = "unpalm"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Linux palm rejection filter for touchpads"
 license = "GPL-3.0"
