@@ -37,7 +37,7 @@ unpalm solves these problems by working at the evdev level, making it compatible
 - **Custom polygon zones** - Unique capability to define arbitrary shapes (perfect for corner triangles or complex layouts)
 - **Smart per-touch tracking** - Only blocks touches that start in exclusion zones, not those that move into them
 - **Hardware independent** - Works with any touchpad via evdev, no driver-specific dependencies
-- **Lightweight** - Single ~300KB binary with no runtime dependencies
+- **Lightweight** - Single ~760KB binary with no runtime dependencies
 - **Systemd integration** - Run as a user or system service for automatic palm rejection on boot
 
 ## Comparison with Alternatives
@@ -51,7 +51,7 @@ unpalm solves these problems by working at the evdev level, making it compatible
 | **Hardware independent** | ✅ Any evdev device | ⚠️ Needs HW support | ❌ Driver-specific | ✅ Yes | ✅ Yes |
 | **Per-touch tracking** | ✅ Yes | ✅ Yes | ❌ No (coord-based) | ⚠️ Varies | ⚠️ Varies |
 | **Runtime dependencies** | ❌ None | ⚠️ libinput | ⚠️ X11 + drivers | ⚠️ .NET Framework | ⚠️ macOS 10.10+ |
-| **Binary size** | ~300KB | Part of libinput | N/A | ~2MB | ~15MB |
+| **Binary size** | ~760KB | Part of libinput | N/A | ~2MB | ~15MB |
 
 **Key differentiators:**
 - unpalm is the only Linux solution that combines Wayland support, configurable polygon zones, and hardware independence

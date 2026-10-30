@@ -17,7 +17,7 @@ signal-hook = "0.4"
 nix = { version = "0.29", features = ["poll"] }
 clap = { version = "4.5", features = ["derive"] }
 log = "0.4"
-env_logger = "0.11"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
 
 [profile.release]
 opt-level = "z"
