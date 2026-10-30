@@ -95,7 +95,7 @@ Run with default settings (auto-detect touchpad, built-in exclusion zones):
 unpalm
 ```
 
-The tool will auto-detect your touchpad and create a filtered virtual device.
+The tool will auto-detect your touchpad and create a filtered virtual device. Touchpad collections exposed by touchscreens are ignored. If more than one touchpad remains, pick one with `-n` or `-f`.
 
 ### Default Exclusion Zones
 

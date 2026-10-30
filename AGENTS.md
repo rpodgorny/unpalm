@@ -71,7 +71,7 @@ sudo systemctl start unpalm.service
 **Device Detection (`main.rs`):**
 - `is_touchpad()`: Identifies touchpads via evdev properties (INPUT_PROP_POINTER without INPUT_PROP_DIRECT)
 - `find_device()`: Three-mode device discovery: explicit path, name pattern with wildcard matching, or auto-detection
-- `find_all_touchpads()`: Helper that enumerates all touchpad devices
+- `find_all_touchpads()`: Enumerates touchpads, skipping ghost "Touchpad" collections that share a HID device with a direct-input device (touchscreen/stylus) and other unpalm instances' virtual devices
 - `wildcard_match()`: Simple wildcard pattern matching for device names
 
 **Exclusion Zones (`polygon.rs`):**

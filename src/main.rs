@@ -5,9 +5,9 @@ use evdev::{uinput::VirtualDevice, AbsoluteAxisCode, KeyCode};
 use nix::poll::{poll, PollFd, PollFlags};
 use polygon::{is_in_any_polygon, parse_polygon_string, Polygon};
 use signal_hook::{consts::SIGINT, consts::SIGTERM, iterator::Signals};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::os::fd::AsFd;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -73,6 +73,8 @@ struct Cli {
     debug: bool,
 }
 
+const VIRTUAL_DEVICE_NAME: &str = "Filtered Touchpad";
+
 /// Check if a device is a touchpad by looking for:
 /// - INPUT_PROP_POINTER property (not a touchscreen which has INPUT_PROP_DIRECT)
 /// - Absolute position axes (ABS_MT_POSITION_X/Y or ABS_X/Y)
@@ -131,12 +133,59 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
     }
 }
 
-/// Find all touchpad devices in the system
-fn find_all_touchpads() -> Vec<(PathBuf, evdev::Device)> {
-    evdev::enumerate()
-        .filter(|(_, device)| is_touchpad(device))
-        .map(|(path, device)| (path.to_path_buf(), device))
-        .collect()
+/// Resolve the sysfs parent of an event node, the device its input nodes hang off
+///
+/// Two hops: eventX -> inputN -> transport parent. For HID devices the parent is
+/// the HID device, shared by all its collections. Virtual (uinput) devices have
+/// no parent and return None.
+fn sysfs_parent(event_path: &Path) -> Option<PathBuf> {
+    let event_name = event_path.file_name()?;
+    std::fs::canonicalize(
+        Path::new("/sys/class/input")
+            .join(event_name)
+            .join("device/device"),
+    )
+    .ok()
+}
+
+/// Split touchpads into (usable, ignored), ignoring those that share a sysfs
+/// parent with any direct-input device (touchscreen or stylus). A touchpad with
+/// an unknown parent is kept: wrongly dropping a real touchpad is the worse failure.
+#[allow(clippy::type_complexity)]
+fn split_touchpads<T>(
+    touchpads: Vec<(PathBuf, T)>,
+    direct_paths: &[PathBuf],
+    parent_of: impl Fn(&Path) -> Option<PathBuf>,
+) -> (Vec<(PathBuf, T)>, Vec<(PathBuf, T)>) {
+    let direct_parents: HashSet<PathBuf> =
+        direct_paths.iter().filter_map(|p| parent_of(p)).collect();
+
+    touchpads
+        .into_iter()
+        .partition(|(path, _)| !parent_of(path).is_some_and(|p| direct_parents.contains(&p)))
+}
+
+/// Find all touchpad devices in the system, returned as (usable, ignored)
+///
+/// Some touchscreens (e.g. ELAN panels on the ASUS Zenbook Duo) also expose a
+/// "Touchpad" collection that looks like a real touchpad but is part of the screen.
+#[allow(clippy::type_complexity)]
+fn find_all_touchpads() -> (Vec<(PathBuf, evdev::Device)>, Vec<(PathBuf, evdev::Device)>) {
+    let devices: Vec<(PathBuf, evdev::Device)> = evdev::enumerate().collect();
+
+    let direct_paths: Vec<PathBuf> = devices
+        .iter()
+        .filter(|(_, device)| device.properties().contains(evdev::PropType::DIRECT))
+        .map(|(path, _)| path.clone())
+        .collect();
+
+    let touchpads = devices
+        .into_iter()
+        // Another unpalm's virtual device is a filtered copy, not a physical touchpad
+        .filter(|(_, device)| is_touchpad(device) && device.name() != Some(VIRTUAL_DEVICE_NAME))
+        .collect();
+
+    split_touchpads(touchpads, &direct_paths, sysfs_parent)
 }
 
 fn find_device(
@@ -196,14 +245,42 @@ fn find_device(
     }
 
     // Case 3: Auto-detect - find all touchpads
-    let touchpads = find_all_touchpads();
+    let (touchpads, ignored) = find_all_touchpads();
+
+    // Not logged when nothing is usable: reconnection retries this every second
+    if !touchpads.is_empty() {
+        for (path, device) in &touchpads {
+            let name = device.name().unwrap_or("Unknown");
+            log::info!("Detected touchpad: {} - {name}", path.display());
+        }
+        for (path, device) in &ignored {
+            let name = device.name().unwrap_or("Unknown");
+            log::info!(
+                "Detected touchpad: {} - {name} (ignored, shares HID device with touchscreen/stylus)",
+                path.display()
+            );
+        }
+    }
 
     match touchpads.len() {
-        0 => Err("No touchpads found".to_string()),
+        0 if ignored.is_empty() => Err("No touchpads found".to_string()),
+        0 => {
+            let names: Vec<String> = ignored
+                .iter()
+                .map(|(path, device)| {
+                    let name = device.name().unwrap_or("Unknown");
+                    format!("{} - {name}", path.display())
+                })
+                .collect();
+            Err(format!(
+                "No touchpads found (ignored, sharing HID device with touchscreen/stylus: {})",
+                names.join(", ")
+            ))
+        }
         1 => {
             let (path, device) = touchpads.into_iter().next().unwrap();
             let name = device.name().unwrap_or("Unknown");
-            log::info!("Auto-detected touchpad: {} - {name}", path.display());
+            log::info!("Auto-selected touchpad: {} - {name}", path.display());
             Ok(device)
         }
         n => {
@@ -253,7 +330,7 @@ fn setup_device(
 
     // Create virtual device with same capabilities
     let mut builder = VirtualDevice::builder()?
-        .name("Filtered Touchpad")
+        .name(VIRTUAL_DEVICE_NAME)
         .with_keys(device.supported_keys().unwrap_or_default())?;
 
     // Copy device properties (INPUT_PROP_POINTER, etc.) - critical for libinput
@@ -340,6 +417,8 @@ fn run_event_loop(
     running: &Arc<AtomicBool>,
     block_taps: bool,
 ) -> LoopExitReason {
+    let device_name = device.name().unwrap_or("Unknown").to_string();
+
     // Track multitouch slot state
     // slot_blocked[slot] = true if touch started in edge zone
     // slot_positions[slot] = (x, y) - None means not yet known
@@ -377,7 +456,7 @@ fn run_event_loop(
                     continue;
                 }
                 if is_device_disconnected(&e) {
-                    log::error!("Device disconnected: {}", e);
+                    log::error!("Device disconnected: {device_name}: {e}");
                     return LoopExitReason::DeviceDisconnected;
                 }
                 return LoopExitReason::FatalError(format!("Error reading events: {}", e));
@@ -779,6 +858,62 @@ mod tests {
     fn test_wildcard_special_characters() {
         assert!(wildcard_match("*foo-bar*", "my foo-bar device"));
         assert!(wildcard_match("device (v2)", "device (v2)"));
+    }
+
+    // Tests for split_touchpads
+    fn fake_parent(path: &Path) -> Option<PathBuf> {
+        match path.to_str()? {
+            "ghost" | "screen" | "stylus" => Some(PathBuf::from("hid-screen")),
+            "real" | "mouse" => Some(PathBuf::from("hid-keyboard")),
+            _ => None,
+        }
+    }
+
+    fn split_names(touchpads: &[&str], direct: &[&str]) -> (Vec<String>, Vec<String>) {
+        let touchpads = touchpads.iter().map(|t| (PathBuf::from(t), ())).collect();
+        let direct: Vec<PathBuf> = direct.iter().map(PathBuf::from).collect();
+        let (usable, ignored) = split_touchpads(touchpads, &direct, fake_parent);
+        let names = |v: Vec<(PathBuf, ())>| {
+            v.into_iter()
+                .map(|(p, _)| p.display().to_string())
+                .collect()
+        };
+        (names(usable), names(ignored))
+    }
+
+    #[test]
+    fn test_split_ignores_touchpad_sharing_parent_with_touchscreen() {
+        let (usable, ignored) = split_names(&["ghost", "real"], &["screen"]);
+        assert_eq!(usable, ["real"]);
+        assert_eq!(ignored, ["ghost"]);
+    }
+
+    #[test]
+    fn test_split_ignores_touchpad_sharing_parent_with_stylus() {
+        let (usable, ignored) = split_names(&["ghost"], &["stylus"]);
+        assert!(usable.is_empty());
+        assert_eq!(ignored, ["ghost"]);
+    }
+
+    #[test]
+    fn test_split_keeps_touchpads_without_direct_devices() {
+        let (usable, ignored) = split_names(&["ghost", "real"], &[]);
+        assert_eq!(usable, ["ghost", "real"]);
+        assert!(ignored.is_empty());
+    }
+
+    #[test]
+    fn test_split_keeps_touchpad_with_unknown_parent() {
+        let (usable, ignored) = split_names(&["unknown"], &["screen"]);
+        assert_eq!(usable, ["unknown"]);
+        assert!(ignored.is_empty());
+    }
+
+    #[test]
+    fn test_split_unknown_parents_do_not_match_each_other() {
+        let (usable, ignored) = split_names(&["unknown"], &["unknown-screen"]);
+        assert_eq!(usable, ["unknown"]);
+        assert!(ignored.is_empty());
     }
 
     // Tests for is_device_disconnected
