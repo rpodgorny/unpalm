@@ -29,6 +29,23 @@ struct DeviceSetup {
     virtual_device: VirtualDevice,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct AxisBounds {
+    // Raw evdev coordinate origin; geometry is measured relative to this value.
+    min: i32,
+    max: i32,
+}
+
+impl AxisBounds {
+    fn size(self) -> i32 {
+        self.max - self.min
+    }
+
+    fn normalize(self, value: i32) -> i32 {
+        value - self.min
+    }
+}
+
 /// Palm rejection filter for touchpads
 #[derive(clap::Parser, Debug)]
 #[command(name = "unpalm", version)]
@@ -307,7 +324,7 @@ fn is_device_disconnected(error: &std::io::Error) -> bool {
 fn setup_device(
     device_name: Option<&str>,
     device_file: Option<&PathBuf>,
-) -> Result<(DeviceSetup, i32, i32), Box<dyn std::error::Error>> {
+) -> Result<(DeviceSetup, AxisBounds, AxisBounds), Box<dyn std::error::Error>> {
     // Find the touchpad
     let mut device = find_device(device_name, device_file)?;
 
@@ -323,10 +340,28 @@ fn setup_device(
         .or_else(|| absinfo.get(&AbsoluteAxisCode::ABS_Y))
         .ok_or("No Y axis found")?;
 
-    let x_max = x_info.maximum();
-    let y_max = y_info.maximum();
+    // Keep both raw endpoints: some devices, (e.g. macbook pro 2019 16.1 trackpad,)
+    // report negative minimum, so maximum alone is not the physical dimension.
+    let x_bounds = AxisBounds {
+        min: x_info.minimum(),
+        max: x_info.maximum(),
+    };
+    let y_bounds = AxisBounds {
+        min: y_info.minimum(),
+        max: y_info.maximum(),
+    };
+    let (x_size, y_size) = (x_bounds.size(), y_bounds.size());
 
-    log::info!("Detected touchpad dimensions: X_MAX={x_max}, Y_MAX={y_max}");
+    log::info!(
+        "Touchpad X: min={} max={} width={x_size}",
+        x_bounds.min,
+        x_bounds.max
+    );
+    log::info!(
+        "Touchpad Y: min={} max={} height={y_size}",
+        y_bounds.min,
+        y_bounds.max
+    );
 
     // Create virtual device with same capabilities
     let mut builder = VirtualDevice::builder()?
@@ -366,8 +401,8 @@ fn setup_device(
             device,
             virtual_device,
         },
-        x_max,
-        y_max,
+        x_bounds,
+        y_bounds,
     ))
 }
 
@@ -416,6 +451,8 @@ fn run_event_loop(
     polygons: &[Polygon],
     running: &Arc<AtomicBool>,
     block_taps: bool,
+    x_bounds: AxisBounds,
+    y_bounds: AxisBounds,
 ) -> LoopExitReason {
     let device_name = device.name().unwrap_or("Unknown").to_string();
 
@@ -491,6 +528,9 @@ fn run_event_loop(
                 }
                 evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_POSITION_X, x) => {
                     if let Some((old_x, old_y)) = slot_positions.get(&current_slot).copied() {
+                        // Normalize only the position used for zone checks.
+                        // the original event below is still forwarded unmodified.
+                        let x = x_bounds.normalize(x);
                         slot_positions.insert(current_slot, (Some(x), old_y));
 
                         // Check if this is the first complete position
@@ -508,6 +548,8 @@ fn run_event_loop(
                 }
                 evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_POSITION_Y, y) => {
                     if let Some((old_x, old_y)) = slot_positions.get(&current_slot).copied() {
+                        // Keep the same zero-origin geometry used to build polygons.
+                        let y = y_bounds.normalize(y);
                         slot_positions.insert(current_slot, (old_x, Some(y)));
 
                         // Check if this is the first complete position
@@ -621,8 +663,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Initial device setup (failure exits the program)
-    let (mut setup, x_max, y_max) =
+    let (mut setup, x_bounds, y_bounds) =
         setup_device(cli.device_name.as_deref(), cli.device_file.as_ref())?;
+    let (x_size, y_size) = (x_bounds.size(), y_bounds.size());
 
     // Build exclusion zone polygons from margins and explicit polygons
     let mut polygons: Vec<Polygon> = Vec::new();
@@ -637,29 +680,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Explicit args given: only use what was specified, margins produce rectangles
         if let Some(pct) = cli.margin_left {
             if pct > 0.0 {
-                let margin_px = (x_max as f32 * pct / 100.0) as i32;
-                polygons.push(Polygon::rectangle(0, 0, margin_px, y_max));
+                let margin_px = (x_size as f32 * pct / 100.0) as i32;
+                polygons.push(Polygon::rectangle(0, 0, margin_px, y_size));
                 log::info!("Left margin: {pct}% ({margin_px}px) [rectangle]");
             }
         }
         if let Some(pct) = cli.margin_right {
             if pct > 0.0 {
-                let margin_px = (x_max as f32 * pct / 100.0) as i32;
-                polygons.push(Polygon::rectangle(x_max - margin_px, 0, x_max, y_max));
+                let margin_px = (x_size as f32 * pct / 100.0) as i32;
+                polygons.push(Polygon::rectangle(x_size - margin_px, 0, x_size, y_size));
                 log::info!("Right margin: {pct}% ({margin_px}px) [rectangle]");
             }
         }
         if let Some(pct) = cli.margin_top {
             if pct > 0.0 {
-                let margin_px = (y_max as f32 * pct / 100.0) as i32;
-                polygons.push(Polygon::rectangle(0, 0, x_max, margin_px));
+                let margin_px = (y_size as f32 * pct / 100.0) as i32;
+                polygons.push(Polygon::rectangle(0, 0, x_size, margin_px));
                 log::info!("Top margin: {pct}% ({margin_px}px) [rectangle]");
             }
         }
         if let Some(pct) = cli.margin_bottom {
             if pct > 0.0 {
-                let margin_px = (y_max as f32 * pct / 100.0) as i32;
-                polygons.push(Polygon::rectangle(0, y_max - margin_px, x_max, y_max));
+                let margin_px = (y_size as f32 * pct / 100.0) as i32;
+                polygons.push(Polygon::rectangle(0, y_size - margin_px, x_size, y_size));
                 log::info!("Bottom margin: {pct}% ({margin_px}px) [rectangle]");
             }
         }
@@ -669,7 +712,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let points = parse_polygon_string(polygon_str).map_err(|e| {
                 format!("Failed to parse polygon {} '{}': {}", i + 1, polygon_str, e)
             })?;
-            let polygon = Polygon::from_percentages(&points, x_max, y_max)
+            let polygon = Polygon::from_percentages(&points, x_size, y_size)
                 .map_err(|e| format!("Failed to create polygon {}: {}", i + 1, e))?;
             log::info!("Polygon {}: {} vertices", i + 1, polygon.vertices.len());
 
@@ -682,21 +725,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         // No explicit args: apply built-in defaults
         // Top 20% rectangle
-        let top_px = (y_max as f32 * 20.0 / 100.0) as i32;
-        polygons.push(Polygon::rectangle(0, 0, x_max, top_px));
+        let top_px = (y_size as f32 * 20.0 / 100.0) as i32;
+        polygons.push(Polygon::rectangle(0, 0, x_size, top_px));
         log::info!("Default: top 20% rectangle ({top_px}px)");
 
-        // Left 30% triangle: (0,0) -> (left_px,0) -> (0,y_max)
-        let left_px = (x_max as f32 * 30.0 / 100.0) as i32;
+        // Left 30% triangle: (0,0) -> (left_px,0) -> (0,y_size)
+        let left_px = (x_size as f32 * 30.0 / 100.0) as i32;
         polygons.push(Polygon {
-            vertices: vec![(0, 0), (left_px, 0), (0, y_max)],
+            vertices: vec![(0, 0), (left_px, 0), (0, y_size)],
         });
         log::info!("Default: left 30% triangle ({left_px}px)");
 
-        // Right 30% triangle: (x_max-right_px,0) -> (x_max,0) -> (x_max,y_max)
-        let right_px = (x_max as f32 * 30.0 / 100.0) as i32;
+        // Right 30% triangle: (x_size-right_px,0) -> (x_size,0) -> (x_size,y_size)
+        let right_px = (x_size as f32 * 30.0 / 100.0) as i32;
         polygons.push(Polygon {
-            vertices: vec![(x_max - right_px, 0), (x_max, 0), (x_max, y_max)],
+            vertices: vec![(x_size - right_px, 0), (x_size, 0), (x_size, y_size)],
         });
         log::info!("Default: right 30% triangle ({right_px}px)");
 
@@ -714,7 +757,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     log::info!(
         "Exclusion zone map:\n{}",
-        polygon::visualize_zones(&polygons, x_max, y_max)
+        polygon::visualize_zones(&polygons, x_size, y_size)
     );
 
     // Main loop with reconnection support
@@ -725,6 +768,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &polygons,
             &running,
             cli.block_taps,
+            x_bounds,
+            y_bounds,
         ) {
             LoopExitReason::SignalReceived => {
                 log::info!("Shutting down...");
@@ -763,6 +808,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn axis_bounds_normalize_zero_based_and_negative_ranges() {
+        let zero = AxisBounds { min: 0, max: 100 };
+        assert_eq!(zero.size(), 100);
+        assert_eq!(zero.normalize(37), 37);
+
+        let negative_min = AxisBounds {
+            min: -100,
+            max: 100,
+        };
+        assert_eq!(negative_min.size(), 200);
+        assert_eq!(negative_min.normalize(-100), 0);
+        assert_eq!(negative_min.normalize(0), 100);
+        assert_eq!(negative_min.normalize(100), 200);
+
+        let negative_min_and_max = AxisBounds {
+            min: -200,
+            max: -100,
+        };
+        assert_eq!(negative_min_and_max.size(), 100);
+        assert_eq!(negative_min_and_max.normalize(-200), 0);
+        assert_eq!(negative_min_and_max.normalize(-100), 100);
+        assert_eq!(negative_min_and_max.normalize(-150), 50);
+    }
 
     // Tests for wildcard_match
 
