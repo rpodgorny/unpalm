@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Exclusion zones are placed correctly on touchpads whose axes have a nonzero (e.g. negative) minimum, such as some MacBook trackpads.
+
 ### Security
 
 ## [0.2.1] - 2026-10-30

@@ -29,9 +29,11 @@ struct DeviceSetup {
     virtual_device: VirtualDevice,
 }
 
+/// Raw evdev range of one touchpad axis. Exclusion zones are built in
+/// zero-based coordinates (0..size), so positions are normalized by
+/// subtracting `min` before zone checks.
 #[derive(Clone, Copy, Debug)]
 struct AxisBounds {
-    // Raw evdev coordinate origin; geometry is measured relative to this value.
     min: i32,
     max: i32,
 }
@@ -340,8 +342,8 @@ fn setup_device(
         .or_else(|| absinfo.get(&AbsoluteAxisCode::ABS_Y))
         .ok_or("No Y axis found")?;
 
-    // Keep both raw endpoints: some devices, (e.g. macbook pro 2019 16.1 trackpad,)
-    // report negative minimum, so maximum alone is not the physical dimension.
+    // Keep both raw endpoints: some devices (e.g. the MacBook Pro 16,1 trackpad)
+    // report a negative minimum, so the maximum alone is not the physical size.
     let x_bounds = AxisBounds {
         min: x_info.minimum(),
         max: x_info.maximum(),
@@ -528,8 +530,8 @@ fn run_event_loop(
                 }
                 evdev::EventSummary::AbsoluteAxis(_, AbsoluteAxisCode::ABS_MT_POSITION_X, x) => {
                     if let Some((old_x, old_y)) = slot_positions.get(&current_slot).copied() {
-                        // Normalize only the position used for zone checks.
-                        // the original event below is still forwarded unmodified.
+                        // Normalize only the position used for zone checks;
+                        // the original event is still forwarded unmodified.
                         let x = x_bounds.normalize(x);
                         slot_positions.insert(current_slot, (Some(x), old_y));
 
