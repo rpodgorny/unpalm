@@ -25,8 +25,6 @@
               lockFile = ./Cargo.lock;
             };
 
-            nativeBuildInputs = [ pkgs.pkg-config ];
-
             meta = with pkgs.lib; {
               description = "Universal palm rejection for Linux touchpads working at evdev level";
               homepage = "https://github.com/rpodgorny/unpalm";
@@ -53,31 +51,11 @@
               description = "The unpalm package to use.";
             };
 
-            deviceName = lib.mkOption {
-              type = lib.types.nullOr lib.types.str;
-              default = null;
-              example = "*Synaptics*";
-              description = "Touchpad device name pattern (maps to -n argument). Auto-detects if null.";
-            };
-
-            margins = {
-              left = lib.mkOption { type = lib.types.nullOr lib.types.int; default = null; };
-              right = lib.mkOption { type = lib.types.nullOr lib.types.int; default = null; };
-              top = lib.mkOption { type = lib.types.nullOr lib.types.int; default = null; };
-              bottom = lib.mkOption { type = lib.types.nullOr lib.types.int; default = null; };
-            };
-
-            polygons = lib.mkOption {
+            args = lib.mkOption {
               type = lib.types.listOf lib.types.str;
               default = [];
-              example = [ "0,0 20,0 10,30" ];
-              description = "Custom polygon exclusion zones (percentages 0-100).";
-            };
-
-            extraArgs = lib.mkOption {
-              type = lib.types.listOf lib.types.str;
-              default = [];
-              description = "Additional CLI arguments passed directly to unpalm.";
+              example = [ "-n" "*Synaptics*" "--margin-left" "12.5" "--block-taps" ];
+              description = "CLI arguments passed directly to unpalm (see `unpalm --help`).";
             };
           };
 
@@ -104,33 +82,22 @@
             systemd.services.unpalm = {
               description = "Unpalm Touchpad Filter Service";
               wantedBy = [ "multi-user.target" ];
-              after = [ "systemd-udev-settle.service" ];
-
 
               serviceConfig = {
-                ExecStart = let
-                  args = lib.optionals (cfg.deviceName != null) [ "-n" cfg.deviceName ]
-                    ++ lib.optionals (cfg.margins.left != null) [ "--margin-left" (toString cfg.margins.left) ]
-                    ++ lib.optionals (cfg.margins.right != null) [ "--margin-right" (toString cfg.margins.right) ]
-                    ++ lib.optionals (cfg.margins.top != null) [ "--margin-top" (toString cfg.margins.top) ]
-                    ++ lib.optionals (cfg.margins.bottom != null) [ "--margin-bottom" (toString cfg.margins.bottom) ]
-                    ++ lib.concatMap (poly: [ "--polygon" poly ]) cfg.polygons
-                    ++ cfg.extraArgs;
-                in
-                  utils.escapeSystemdExecArgs ([ "${cfg.package}/bin/unpalm" ] ++ args);
+                ExecStart = utils.escapeSystemdExecArgs ([ "${cfg.package}/bin/unpalm" ] ++ cfg.args);
 
                 User = "unpalm";
                 Group = "unpalm";
 
                 Restart = "always";
                 RestartSec = "2s";
-                
+
                 # Security Hardening
-                # Allow systemd to enumerate /dev/input/* nodes freely
+                # DeviceAllow is an allowlist: char-input covers /dev/input/*
+                # (systemd does not expand globs in DeviceAllow paths).
                 DevicePolicy = "auto";
                 DeviceAllow = [
                   "/dev/uinput rwb"
-                  "/dev/input/event* rwb"
                   "char-input rwb"
                 ];
                 PrivateDevices = false;
